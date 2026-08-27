@@ -3,6 +3,7 @@ import { buildPlan } from "@/core/plan";
 import {
   type Config,
   DEFAULT_CONFIG,
+  type DuplicateCluster,
   type GroupColor,
   type GroupPlan,
   type GroupProposal,
@@ -15,7 +16,8 @@ import {
   type Snapshot,
   supportsTabGroups,
 } from "@/platform/apply";
-import { clearSnapshot, loadSnapshot, saveSnapshot } from "@/platform/storage";
+import { loadUiSettings, saveUiSettings } from "@/platform/settings";
+import { clearSnapshot, loadSnapshotMap, saveSnapshot } from "@/platform/storage";
 import { readCurrentWindow } from "@/platform/tabs";
 
 /**
@@ -39,10 +41,15 @@ type Phase =
   | { status: "unsupported" }
   | { status: "ready"; windowId: number; tabs: TabInfo[] }
   | { status: "working"; label: string }
-  | { status: "applied"; result: ApplyResult }
+  | { status: "applied"; result: ApplyResult; failedLabels: string[] }
   | { status: "failed"; message: string };
 
-type Loaded = { windowId: number; tabs: TabInfo[]; snapshot: Snapshot | null };
+type Loaded = {
+  windowId: number;
+  tabs: TabInfo[];
+  snapshot: Snapshot | null;
+  collapseNewGroups: boolean;
+};
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -52,16 +59,76 @@ function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
+function tabLabel(tab: TabInfo): string {
+  return tab.title === "" ? tab.url : tab.title;
+}
+
+function lookup(byId: ReadonlyMap<number, TabInfo>, ids: readonly number[]): TabInfo[] {
+  return ids.flatMap((id) => {
+    const tab = byId.get(id);
+    return tab === undefined ? [] : [tab];
+  });
+}
+
 /**
- * One read of the world: the window's organisable tabs, plus an undo snapshot
- * from an earlier apply if this window has one. Reads only — the popup is
- * reopened after every apply and has to be able to run this at any time.
+ * One read of the world: the window's organisable tabs, an undo snapshot for
+ * this window if there is one, and the collapse preference. Reads only — the
+ * popup is reopened after every apply and has to be able to run this at any time.
  */
 async function readState(): Promise<Loaded> {
-  const [{ windowId, tabs }, snapshot] = await Promise.all([readCurrentWindow(), loadSnapshot()]);
+  const [{ windowId, tabs }, snapshots, settings] = await Promise.all([
+    readCurrentWindow(),
+    loadSnapshotMap(),
+    loadUiSettings(),
+  ]);
 
-  // A snapshot belonging to another window is not ours to offer here.
-  return { windowId, tabs, snapshot: snapshot?.windowId === windowId ? snapshot : null };
+  return {
+    windowId,
+    tabs,
+    snapshot: snapshots.get(windowId) ?? null,
+    collapseNewGroups: settings.collapseNewGroups,
+  };
+}
+
+function Busy({ label }: { label: string }) {
+  return (
+    <div className="busy" role="status" aria-live="polite">
+      <span className="spinner" aria-hidden="true" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function Chevron({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={expanded ? "chevron-icon is-open" : "chevron-icon"}
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+    >
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3.5 6.5 8 11l4.5-4.5"
+      />
+    </svg>
+  );
+}
+
+function PickAllNone({ onAll, onNone }: { onAll: () => void; onNone: () => void }) {
+  return (
+    <span className="pick">
+      <button type="button" className="link" onClick={onAll}>
+        All
+      </button>
+      <button type="button" className="link" onClick={onNone}>
+        None
+      </button>
+    </span>
+  );
 }
 
 /**
@@ -101,7 +168,7 @@ function GroupRow({
           aria-label={expanded ? `Hide tabs in ${group.label}` : `Show tabs in ${group.label}`}
           onClick={onExpand}
         >
-          {expanded ? "⌃" : "⌄"}
+          <Chevron expanded={expanded} />
         </button>
       </div>
 
@@ -109,7 +176,68 @@ function GroupRow({
         <ul className="tab-list">
           {tabs.map((tab) => (
             <li key={tab.id} title={tab.url}>
-              {tab.title === "" ? tab.url : tab.title}
+              {tabLabel(tab)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+/**
+ * One duplicate cluster. Unchecking it spares those tabs — they go back into
+ * grouping — rather than filtering a plan whose group sizes would then be wrong.
+ */
+function DuplicateRow({
+  cluster,
+  keep,
+  close,
+  expanded,
+  onSelect,
+  onExpand,
+}: {
+  cluster: DuplicateCluster;
+  keep: TabInfo | undefined;
+  close: TabInfo[];
+  expanded: boolean;
+  onSelect: () => void;
+  onExpand: () => void;
+}) {
+  const selected = !cluster.spare;
+  const label = keep === undefined ? cluster.canonicalUrl : tabLabel(keep);
+  const reason = `close ${plural(cluster.close.length, "copy", "copies")}`;
+
+  return (
+    <li className={selected ? "group" : "group group-off"}>
+      <div className="group-head">
+        <label className="group-main">
+          <input type="checkbox" checked={selected} onChange={onSelect} />
+          <span className="group-label">{label}</span>
+          <span className="muted group-reason">{reason}</span>
+        </label>
+
+        <button
+          type="button"
+          className="chevron"
+          aria-expanded={expanded}
+          aria-label={expanded ? `Hide copies of ${label}` : `Show copies of ${label}`}
+          onClick={onExpand}
+        >
+          <Chevron expanded={expanded} />
+        </button>
+      </div>
+
+      {expanded && (
+        <ul className="tab-list">
+          {keep !== undefined && (
+            <li key={keep.id} title={keep.url}>
+              Keep: {tabLabel(keep)}
+            </li>
+          )}
+          {close.map((tab) => (
+            <li key={tab.id} title={tab.url}>
+              {tabLabel(tab)}
             </li>
           ))}
         </ul>
@@ -122,8 +250,10 @@ export function App() {
   const [phase, setPhase] = useState<Phase>({ status: "loading" });
   const [undoable, setUndoable] = useState<Snapshot | null>(null);
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
+  const [spared, setSpared] = useState<ReadonlySet<string>>(new Set());
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const [closeDuplicates, setCloseDuplicates] = useState(true);
+  const [ungroupedOpen, setUngroupedOpen] = useState(false);
+  const [collapseNewGroups, setCollapseNewGroups] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +267,7 @@ export function App() {
       .then((loaded) => {
         if (cancelled) return;
         setUndoable(loaded.snapshot);
+        setCollapseNewGroups(loaded.collapseNewGroups);
         setPhase({ status: "ready", windowId: loaded.windowId, tabs: loaded.tabs });
       })
       .catch((error: unknown) => {
@@ -152,7 +283,7 @@ export function App() {
     setPhase({ status: "working", label: "Grouping tabs…" });
 
     try {
-      const result = await applyPlan(plan, [...excluded]);
+      const result = await applyPlan(plan, [...excluded], { collapse: collapseNewGroups });
       const changed =
         result.snapshot.createdGroups.length > 0 || result.snapshot.closedTabs.length > 0;
 
@@ -160,8 +291,13 @@ export function App() {
       // empty one — the Undo button would then be a lie.
       if (changed) await saveSnapshot(result.snapshot);
 
+      const failedLabels = result.failedKeys.map((key) => {
+        const group = plan.groups.find((proposal) => proposal.key === key);
+        return group === undefined ? key : group.label;
+      });
+
       setUndoable(changed ? result.snapshot : undoable);
-      setPhase({ status: "applied", result });
+      setPhase({ status: "applied", result, failedLabels });
     } catch (error: unknown) {
       setPhase({ status: "failed", message: describe(error) });
     }
@@ -172,13 +308,15 @@ export function App() {
 
     try {
       await restore(snapshot);
-      await clearSnapshot();
+      await clearSnapshot(snapshot.windowId);
       setUndoable(null);
       setExcluded(new Set());
+      setSpared(new Set());
 
       // Back to a fresh preview rather than a "done" screen: the tabs just moved,
       // so anything still on screen would be describing a window that is gone.
       const loaded = await readState();
+      setCollapseNewGroups(loaded.collapseNewGroups);
       setPhase({ status: "ready", windowId: loaded.windowId, tabs: loaded.tabs });
     } catch (error: unknown) {
       setPhase({ status: "failed", message: describe(error) });
@@ -195,10 +333,21 @@ export function App() {
     update(next);
   }
 
-  if (phase.status === "loading") return <p className="muted">Reading tabs…</p>;
+  async function handleCollapseChange(next: boolean): Promise<void> {
+    setCollapseNewGroups(next);
+    try {
+      await saveUiSettings({ collapseNewGroups: next });
+    } catch {
+      // Preference did not stick; this apply still honours the checkbox.
+    }
+  }
+
+  // The HTML #boot spinner covers this phase. Returning null keeps #root empty
+  // so Firefox does not hide #boot and then sit on a blank popup.
+  if (phase.status === "loading") return null;
 
   if (phase.status === "working") {
-    return <p className="muted">{phase.label}</p>;
+    return <Busy label={phase.label} />;
   }
 
   if (phase.status === "unsupported") {
@@ -228,7 +377,7 @@ export function App() {
   }
 
   if (phase.status === "applied") {
-    const { snapshot, failedKeys } = phase.result;
+    const { snapshot } = phase.result;
     const nothingHappened = snapshot.createdGroups.length === 0 && snapshot.closedTabs.length === 0;
 
     return (
@@ -242,10 +391,9 @@ export function App() {
                 : ".")}
         </p>
 
-        {failedKeys.length > 0 && (
+        {phase.failedLabels.length > 0 && (
           <p className="error small">
-            {plural(failedKeys.length, "group", "groups")} could not be created. Those tabs were
-            left alone.
+            Could not create {phase.failedLabels.join(", ")}. Those tabs were left alone.
           </p>
         )}
 
@@ -263,18 +411,18 @@ export function App() {
     );
   }
 
-  // Two plans, one per answer to the duplicates question. Both are pure and
-  // cheap, and having the other one is what lets the checkbox show its own
-  // consequence: with duplicates kept, the groups below get bigger.
-  const config: Config = { ...DEFAULT_CONFIG, detectDuplicates: closeDuplicates };
+  const config: Config = { ...DEFAULT_CONFIG, spareDuplicateCanonicals: [...spared] };
   const plan = buildPlan(phase.windowId, phase.tabs, config);
-  const duplicatesFound = buildPlan(phase.windowId, phase.tabs, DEFAULT_CONFIG).stats.wouldClose;
 
   const byId = new Map(phase.tabs.map((tab) => [tab.id, tab]));
   const selected = plan.groups.filter((group) => !excluded.has(group.key));
   const movingTabs = selected.reduce((total, group) => total + group.tabIds.length, 0);
-  const closing = closeDuplicates ? duplicatesFound : 0;
+  const closing = plan.stats.wouldClose;
   const nothingToDo = movingTabs === 0 && closing === 0;
+  const hasGroups = plan.groups.length > 0;
+  const hasDuplicates = plan.duplicates.length > 0;
+  const hasUngrouped = plan.ungrouped.length > 0;
+  const hasPlan = hasGroups || hasDuplicates;
 
   // The button says what it will do, so the summary above it does not have to be
   // read first. "Apply" is only meaningful to someone who already knows.
@@ -299,74 +447,118 @@ export function App() {
         </div>
       )}
 
-      {plan.groups.length === 0 && duplicatesFound === 0 ? (
+      {!hasPlan && (
         <p className="muted">
           Nothing worth grouping here. Every tab is either already in a group, pinned, or the only
           one of its kind.
         </p>
-      ) : (
-        <>
-          <div className="summary">
-            <span>
-              <strong>{plan.stats.tabCount}</strong> loose tabs · <strong>{selected.length}</strong>{" "}
-              of {plan.groups.length} groups
-            </span>
+      )}
 
-            {plan.groups.length > 1 && (
-              <span className="pick">
-                <button type="button" className="link" onClick={() => setExcluded(new Set())}>
-                  All
-                </button>
+      {hasGroups && (
+        <div className="summary">
+          <span>
+            <strong>{plan.stats.tabCount}</strong> loose tabs · <strong>{selected.length}</strong>{" "}
+            of {plan.groups.length} groups
+          </span>
+
+          {plan.groups.length > 1 && (
+            <PickAllNone
+              onAll={() => setExcluded(new Set())}
+              onNone={() => setExcluded(new Set(plan.groups.map((group) => group.key)))}
+            />
+          )}
+        </div>
+      )}
+
+      {(hasPlan || hasUngrouped) && (
+        <div className="plan-body">
+          {hasGroups && (
+            <ul className="plan-list">
+              {plan.groups.map((group) => (
+                <GroupRow
+                  key={group.key}
+                  group={group}
+                  tabs={lookup(byId, group.tabIds)}
+                  selected={!excluded.has(group.key)}
+                  expanded={expanded.has(group.key)}
+                  onSelect={() => toggle(excluded, setExcluded, group.key)}
+                  onExpand={() => toggle(expanded, setExpanded, group.key)}
+                />
+              ))}
+            </ul>
+          )}
+
+          {hasDuplicates && (
+            <section className="section">
+              <div className="section-head">
+                <span>Duplicates</span>
+                {plan.duplicates.length > 1 && (
+                  <PickAllNone
+                    onAll={() => setSpared(new Set())}
+                    onNone={() =>
+                      setSpared(new Set(plan.duplicates.map((cluster) => cluster.canonicalUrl)))
+                    }
+                  />
+                )}
+              </div>
+              <p className="muted small section-note">
+                Undo reopens them, but their history and scroll position are lost.
+              </p>
+              <ul className="plan-list">
+                {plan.duplicates.map((cluster) => (
+                  <DuplicateRow
+                    key={cluster.canonicalUrl}
+                    cluster={cluster}
+                    keep={byId.get(cluster.keep)}
+                    close={lookup(byId, cluster.close)}
+                    expanded={expanded.has(cluster.canonicalUrl)}
+                    onSelect={() => toggle(spared, setSpared, cluster.canonicalUrl)}
+                    onExpand={() => toggle(expanded, setExpanded, cluster.canonicalUrl)}
+                  />
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {hasUngrouped && (
+            <section className="section">
+              <div className="group-head">
+                <span className="muted small ungrouped-label">
+                  {plural(plan.ungrouped.length, "tab stays", "tabs stay")} where they are.
+                </span>
                 <button
                   type="button"
-                  className="link"
-                  onClick={() => setExcluded(new Set(plan.groups.map((group) => group.key)))}
+                  className="chevron"
+                  aria-expanded={ungroupedOpen}
+                  aria-label={ungroupedOpen ? "Hide ungrouped tabs" : "Show ungrouped tabs"}
+                  onClick={() => setUngroupedOpen(!ungroupedOpen)}
                 >
-                  None
+                  <Chevron expanded={ungroupedOpen} />
                 </button>
-              </span>
-            )}
-          </div>
-
-          <ul className="groups">
-            {plan.groups.map((group) => (
-              <GroupRow
-                key={group.key}
-                group={group}
-                tabs={group.tabIds.flatMap((id) => {
-                  const tab = byId.get(id);
-                  return tab === undefined ? [] : [tab];
-                })}
-                selected={!excluded.has(group.key)}
-                expanded={expanded.has(group.key)}
-                onSelect={() => toggle(excluded, setExcluded, group.key)}
-                onExpand={() => toggle(expanded, setExpanded, group.key)}
-              />
-            ))}
-          </ul>
-        </>
+              </div>
+              {ungroupedOpen && (
+                <ul className="tab-list">
+                  {lookup(byId, plan.ungrouped).map((tab) => (
+                    <li key={tab.id} title={tab.url}>
+                      {tabLabel(tab)}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+        </div>
       )}
 
-      {duplicatesFound > 0 && (
-        <label className="duplicates">
+      {hasGroups && (
+        <label className="setting">
           <input
             type="checkbox"
-            checked={closeDuplicates}
-            onChange={(event) => setCloseDuplicates(event.target.checked)}
+            checked={collapseNewGroups}
+            onChange={(event) => void handleCollapseChange(event.target.checked)}
           />
-          <span>
-            Close {plural(duplicatesFound, "duplicate tab", "duplicate tabs")}
-            <span className="muted small block">
-              Undo reopens them, but their history and scroll position are lost.
-            </span>
-          </span>
+          <span>Collapse new groups</span>
         </label>
-      )}
-
-      {plan.ungrouped.length > 0 && (
-        <p className="muted small footnote">
-          {plural(plan.ungrouped.length, "tab stays", "tabs stay")} where they are.
-        </p>
       )}
 
       <div className="actions">

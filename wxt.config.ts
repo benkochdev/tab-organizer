@@ -17,6 +17,26 @@ export default defineConfig({
 
   modules: ["@wxt-dev/module-react"],
 
+  // A fixture window so `npm run dev` exercises groups, duplicates, leftovers,
+  // and a host with no registrable domain — without opening tabs by hand.
+  webExt: {
+    startUrls: [
+      "https://github.com/wxt-dev/wxt",
+      "https://github.com/wxt-dev/wxt",
+      "https://github.com/facebook/react",
+      "https://github.com/vitest-dev/vitest",
+      "https://mail.google.com/mail",
+      "https://docs.google.com/document/u/0/",
+      "https://drive.google.com/drive",
+      "https://example.com/page?utm_source=dev",
+      "https://www.example.com/page",
+      "https://news.ycombinator.com/",
+      "https://stackoverflow.com/questions/1",
+      "https://stackoverflow.com/questions/2",
+      "http://localhost:3000/",
+    ],
+  },
+
   // Explicit: WXT still defaults Firefox to MV2. Our design assumes MV3 —
   // non-persistent event page, and the tabGroups API we target.
   manifestVersion: 3,

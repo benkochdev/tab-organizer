@@ -46,14 +46,20 @@ Once installed: **Alt+Shift+O** opens the popup, rebindable under
 ## Development
 
     npm install
-    npm run dev        # launches Firefox with the extension loaded
+    npm run dev        # launches Firefox with a fixture window of test tabs
     npm run verify     # typecheck + lint + test — green before every commit
     npm run build      # production build into .output/firefox-mv3/
     npm run zip        # both archives, ready for AMO
 
 The dev build takes ~2s to open the popup because Vite serves the bundle module
-by module. The production build takes ~250ms. Judge the feel of it there, not in
-dev.
+by module. The production build takes ~250ms. Judge grouping speed there, not in
+dev. The loading spinner is styled from the first paint either way.
+
+`npm run dev` opens a fixture window: a GitHub group, a Google group (mail /
+docs / drive), an example.com duplicate (www + utm), two Stack Overflow tabs
+that stay ungrouped, Hacker News, and a localhost tab with no registrable
+domain. That is enough to click through preview, duplicates, leftovers, apply,
+and undo.
 
 ## Manual check before a release
 
@@ -63,10 +69,14 @@ The unit tests cover the logic; these are the things only a human can see.
 - [ ] Preview lists groups with a readable reason for each
 - [ ] Expanding a group lists the tabs it would contain
 - [ ] Unchecking a group excludes it from the apply
+- [ ] Duplicate clusters list the kept title and expand to Keep / Close
+- [ ] Unchecking a duplicate cluster grows the groups it was taking tabs out of
+- [ ] Expanding "stays where they are" lists the leftover tabs
 - [ ] Apply actually creates the groups in the tab strip, with the right colours
-- [ ] Unchecking "close duplicates" grows the groups it was taking tabs out of
+- [ ] New groups are collapsed; unchecking "Collapse new groups" leaves them open
 - [ ] Undo puts everything back, including reopening closed duplicates
 - [ ] Undo still offered after closing and reopening the popup
+- [ ] Applying in a second window does not steal the first window's undo
 - [ ] Applying twice in a row does nothing the second time
 - [ ] Pinned tabs and `about:` pages are untouched
 - [ ] Toolbar shows the icon, and Alt+Shift+O opens the popup

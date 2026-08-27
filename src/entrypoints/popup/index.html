@@ -4,20 +4,102 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tab Organizer</title>
-    <!-- A <link>, not an import from main.tsx. See the comment in style.css. -->
+    <!--
+      Critical first-paint CSS lives here on purpose. In `npm run dev`, Vite
+      turns a <link> to style.css into a JS injection, so the popup paints as
+      unstyled Times-on-white until the bundle runs (~2s). This block is in the
+      HTML, so the chrome and spinner match the rest of the UI from the first
+      frame. style.css still loads for everything else.
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+        font-size: 14px;
+        --accent: #0060df;
+        --border: rgba(0, 0, 0, 0.12);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #00ddff;
+          --border: rgba(255, 255, 255, 0.16);
+        }
+      }
+      html,
+      body {
+        margin: 0;
+        width: 380px;
+        min-width: 380px;
+        min-height: 120px;
+        background: Canvas;
+        color: CanvasText;
+      }
+      .shell:has(#root:not(:empty)) #boot {
+        display: none;
+      }
+      .shell {
+        padding: 12px 14px 14px;
+      }
+      .head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      h1 {
+        font-size: 15px;
+        font-weight: 600;
+        margin: 0;
+      }
+      .tagline {
+        font-size: 12px;
+        opacity: 0.6;
+      }
+      .busy {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 48px;
+        opacity: 0.75;
+      }
+      .spinner {
+        box-sizing: border-box;
+        width: 16px;
+        height: 16px;
+        flex: none;
+        border: 2px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation: none;
+        }
+      }
+    </style>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <div class="shell">
-      <!-- Static chrome, painted before the bundle loads. React owns #root only,
-           which is why the tab count lives inside the app and not up here. -->
+      <!-- Static chrome, painted before the bundle loads. #boot sits *outside*
+           #root: React's createRoot clears #root before the first commit, and
+           Firefox sizes the popup from that empty frame — a 1×1 window that
+           then never grows. -->
       <header class="head">
         <h1>Tab Organizer</h1>
         <span class="tagline">Nothing moves until you apply</span>
       </header>
-      <div id="root">
-        <p class="muted">Reading tabs…</p>
+      <div id="boot" class="busy" role="status" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Reading tabs…</span>
       </div>
+      <div id="root"></div>
     </div>
     <script type="module" src="./main.tsx"></script>
   </body>

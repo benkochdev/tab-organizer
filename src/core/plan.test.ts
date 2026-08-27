@@ -216,6 +216,63 @@ describe("buildPlan — duplicates", () => {
     expect(plan.groups[0]?.tabIds).toEqual([1, 2, 3]);
   });
 
+  it("still lists a spared cluster, but puts its tabs back into grouping", () => {
+    const tabs = [
+      tab(1, "https://github.com/a"),
+      tab(2, "https://github.com/a"),
+      tab(3, "https://github.com/b"),
+      tab(4, "https://github.com/c"),
+    ];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({ minGroupSize: 3, spareDuplicateCanonicals: ["https://github.com/a"] }),
+    );
+
+    expect(plan.duplicates).toHaveLength(1);
+    expect(plan.duplicates[0]?.spare).toBe(true);
+    expect(plan.duplicates[0]?.close).toEqual([2]);
+    expect(plan.stats.wouldClose).toBe(0);
+    expect(plan.groups[0]?.tabIds).toEqual([1, 2, 3, 4]);
+  });
+
+  it("only counts non-spared clusters toward wouldClose", () => {
+    const tabs = [
+      tab(1, "https://github.com/a"),
+      tab(2, "https://github.com/a"),
+      tab(3, "https://news.com/x"),
+      tab(4, "https://news.com/x"),
+    ];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({ spareDuplicateCanonicals: ["https://github.com/a"] }),
+    );
+
+    expect(plan.duplicates.map((cluster) => cluster.canonicalUrl)).toEqual([
+      "https://github.com/a",
+      "https://news.com/x",
+    ]);
+    expect(plan.duplicates[0]?.spare).toBe(true);
+    expect(plan.duplicates[1]?.spare).toBe(false);
+    expect(plan.stats.wouldClose).toBe(1);
+  });
+
+  it("ignores spareCanonicals when detection is off", () => {
+    const tabs = [tab(1, "https://example.com/a"), tab(2, "https://example.com/a")];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({
+        detectDuplicates: false,
+        spareDuplicateCanonicals: ["https://example.com/a"],
+      }),
+    );
+
+    expect(plan.duplicates).toEqual([]);
+    expect(plan.ungrouped).toEqual([1, 2]);
+  });
+
   it("ignores tabs whose url has no canonical form", () => {
     const tabs = [tab(1, "about:blank"), tab(2, "about:blank")];
     const plan = buildPlan(WINDOW, tabs, config());

@@ -35,10 +35,10 @@ This is not architecture astronautics. It buys three concrete things:
     [core] buildPlan(tabs, config, now)   PURE — the entire product is here
             |
             v
-    [ui] <PlanPreview plan={...} />  user unchecks groups, applies or discards
+    [ui] <PlanPreview plan={...} />  user unchecks groups and duplicate clusters
             |
             v
-    [platform] applyPlan(plan, excluded) -> Snapshot
+    [platform] applyPlan(plan, excluded, { collapse }) -> Snapshot
             |
             v
     [platform] restore(snapshot)     undo
@@ -75,6 +75,7 @@ type DuplicateCluster = {
   canonicalUrl: string;
   keep: number;           // tab id to keep — lowest tab index wins
   close: number[];        // tab ids proposed for closing
+  spare: boolean;         // listed but not closed; those tabs stay in grouping
 };
 
 type GroupPlan = {
@@ -89,6 +90,7 @@ type Config = {
   minGroupSize: number;      // default 3 — two tabs is not clutter
   maxGroups: number;         // default 12
   detectDuplicates: boolean; // default true
+  spareDuplicateCanonicals: string[]; // default [] — clusters to list but not close
 };
 
 type Snapshot = {
@@ -103,7 +105,11 @@ declare function buildPlan(tabs: TabInfo[], config: Config, now: number): GroupP
 
 // impure, src/platform/apply.ts
 type ApplyResult = { snapshot: Snapshot; failedKeys: string[] };  // see D-015
-declare function applyPlan(plan: GroupPlan, excludedKeys: string[]): Promise<ApplyResult>;
+declare function applyPlan(
+  plan: GroupPlan,
+  excludedKeys: string[],
+  options: { collapse: boolean },
+): Promise<ApplyResult>;
 declare function restore(snapshot: Snapshot): Promise<void>;
 ```
 
@@ -123,9 +129,11 @@ URLs, and tabs that are already in a group.
 
 Then, in `buildPlan`:
 
-1. **Duplicates** — same `canonicalUrl`. The `close` tabs are removed from the
-   input to everything downstream, so the groups shown in the preview contain
-   exactly what will exist after apply. Skipped when `detectDuplicates` is false.
+1. **Duplicates** — same `canonicalUrl`. Clusters in `spareDuplicateCanonicals`
+   are still listed (`spare: true`) but their `close` tabs stay in the input to
+   everything downstream, so unchecking a cluster grows the groups. Other
+   `close` tabs are removed, so the groups shown contain exactly what will exist
+   after apply. Skipped entirely when `detectDuplicates` is false.
 2. **Domain clustering** — bucket by eTLD+1, a bucket becomes a group at
    `minGroupSize` or more. This alone handles most of the mess.
 3. Whatever is left becomes `ungrouped`.
@@ -233,11 +241,36 @@ sort remaining params by key, `null` for anything that is not http/https.
 - three tabs on the same canonical URL -> keep one, close two
 - the kept tab is the one with the lowest index, deterministically
 - a duplicate tab must not also appear in a group proposal
+- a spared cluster stays in `duplicates` with `spare: true`; its close-tabs
+  appear in groups and do not count toward `wouldClose`
 
 ## Decisions
 
 Newest first. One line each; a paragraph only when the reasoning is not obvious.
 
+- **D-026 (2026-08-26)** — First paint of the popup is a styled shell plus
+  spinner, from inline CSS in `index.html`. Vite injects `style.css` via JS in
+  dev, so a `<link>` alone is Times-on-white until the bundle runs. The spinner
+  lives outside `#root` (`#boot`): `createRoot` clears `#root` before the first
+  commit, and Firefox will size that empty frame as a 1×1 popup that never
+  grows. `html`/`body` also pin `min-width`/`min-height`.
+- **D-025 (2026-08-26)** — One scroller for groups, duplicates, and ungrouped.
+  Undo bar, summary, collapse checkbox, and actions stay put.
+- **D-024 (2026-08-26)** — Ungrouped tabs are an expandable list, collapsed by
+  default. Titles only — still no per-tab exclude (D-007).
+- **D-023 (2026-08-26)** — Partial apply names the groups that failed, not just
+  how many. No retry loop; the snapshot still describes what actually happened.
+- **D-022 (2026-08-26)** — Newly created groups are collapsed. A popup checkbox,
+  default on, is remembered in `storage.local`. The flag is an apply option, not
+  core `Config` — collapse is not a planning decision. Existing user groups are
+  never touched.
+- **D-021 (2026-08-26)** — Undo snapshots are keyed by `windowId` in
+  `storage.session`. Last apply per window; applying in B does not erase A's undo.
+- **D-020 (2026-08-26)** — Duplicate clusters are preview rows like groups:
+  checkbox, kept-tab title, expand to Keep/Close. Unchecking a cluster recomputes
+  via `spareDuplicateCanonicals` (same reason as D-014). The master "close
+  duplicates" checkbox is gone; All/None on the section replaces it. Lowest index
+  still wins — no survivor picker. Amends D-007: uncheck groups *and* clusters.
 - **D-019 (2026-07-25)** — Add-on id is `tab-organizer@benk113.github.io`, fixed
   before the first signed build. AMO signs against the id, and changing it later
   makes Firefox treat the result as a different add-on that has to be installed

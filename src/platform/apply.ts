@@ -123,11 +123,13 @@ async function closeTabs(
  * Guarantees: never touches a tab the plan did not name, never closes a tab it
  * cannot reopen, and returns a snapshot that describes what actually happened —
  * not what was asked for. A proposal the browser refuses is reported in
- * `failedKeys` and does not abort the rest.
+ * `failedKeys` and does not abort the rest. Spared duplicate clusters are not
+ * closed. Newly created groups are collapsed when `options.collapse` is true.
  */
 export async function applyPlan(
   plan: GroupPlan,
   excludedKeys: readonly string[],
+  options: { collapse: boolean },
 ): Promise<ApplyResult> {
   const excluded = new Set(excludedKeys);
   const live = await readLiveTabs(plan.windowId);
@@ -135,7 +137,7 @@ export async function applyPlan(
   // Duplicates first: their indices are recorded before grouping reshuffles the
   // strip, which is what makes reopening them land roughly where they were.
   const closedTabs = await closeTabs(
-    plan.duplicates.flatMap((cluster) => cluster.close),
+    plan.duplicates.filter((cluster) => !cluster.spare).flatMap((cluster) => cluster.close),
     live,
   );
 
@@ -169,10 +171,12 @@ export async function applyPlan(
       await browser.tabGroups.update(groupId, {
         title: group.label,
         color: toBrowserColor(group.color),
+        collapsed: options.collapse,
       });
     } catch {
-      // The group exists with the browser's default title and colour. Cosmetic,
-      // and not worth reporting an apply that visibly worked as failed.
+      // The group exists with the browser's default title, colour, and
+      // expanded/collapsed state. Cosmetic, and not worth reporting an apply
+      // that visibly worked as failed.
     }
   }
 

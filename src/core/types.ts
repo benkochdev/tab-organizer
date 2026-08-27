@@ -54,6 +54,11 @@ export type DuplicateCluster = {
   /** The tab we keep: the leftmost one in the tab strip. */
   keep: number;
   close: number[];
+  /**
+   * When true, those `close` tabs stay in the window and participate in grouping.
+   * The cluster is still listed so the preview can show it unchecked.
+   */
+  spare: boolean;
 };
 
 export type GroupPlan = {
@@ -71,10 +76,13 @@ export type Config = {
   /** Upper bound on proposals, so a chaotic window does not produce forty groups. */
   maxGroups: number;
   detectDuplicates: boolean;
+  /** Canonical URLs whose duplicate clusters are listed but not closed. */
+  spareDuplicateCanonicals: string[];
 };
 
 export const DEFAULT_CONFIG: Config = {
   minGroupSize: 3,
   maxGroups: 12,
   detectDuplicates: true,
+  spareDuplicateCanonicals: [],
 };

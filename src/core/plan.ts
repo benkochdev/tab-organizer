@@ -72,10 +72,7 @@ function labelForDomain(domain: string): string {
  * the preview always lists exactly the tabs that will exist after apply. A
  * preview whose groups shrink when you click it is a preview nobody trusts.
  */
-function findDuplicates(tabs: TabInfo[]): {
-  duplicates: DuplicateCluster[];
-  remaining: TabInfo[];
-} {
+function findDuplicates(tabs: TabInfo[]): DuplicateCluster[] {
   const byCanonical = new Map<string, TabInfo[]>();
 
   for (const tab of tabs) {
@@ -90,7 +87,6 @@ function findDuplicates(tabs: TabInfo[]): {
   }
 
   const duplicates: DuplicateCluster[] = [];
-  const closing = new Set<number>();
 
   for (const [canonical, bucket] of byCanonical) {
     if (bucket.length < 2) continue;
@@ -103,13 +99,13 @@ function findDuplicates(tabs: TabInfo[]): {
       canonicalUrl: canonical,
       keep: keep.id,
       close: rest.map((tab) => tab.id),
+      spare: false,
     });
-    for (const tab of rest) closing.add(tab.id);
   }
 
   duplicates.sort((a, b) => compareStrings(a.canonicalUrl, b.canonicalUrl));
 
-  return { duplicates, remaining: tabs.filter((tab) => !closing.has(tab.id)) };
+  return duplicates;
 }
 
 /**
@@ -177,11 +173,24 @@ function clusterByDomain(
  *
  * Guarantees: pure, total, and stable — equivalent input always yields
  * byte-identical output. Never mutates `tabs`. Proposes, never performs.
+ * Duplicate clusters are always listed when detected; `spare` clusters keep
+ * their close-tabs in grouping and do not count toward `wouldClose`.
  */
 export function buildPlan(windowId: number, tabs: TabInfo[], config: Config): GroupPlan {
-  const { duplicates, remaining: survivors } = config.detectDuplicates
-    ? findDuplicates(tabs)
-    : { duplicates: [], remaining: tabs };
+  const found = config.detectDuplicates ? findDuplicates(tabs) : [];
+
+  const spare = new Set(config.spareDuplicateCanonicals);
+  const duplicates = found.map((cluster) => ({
+    ...cluster,
+    spare: spare.has(cluster.canonicalUrl),
+  }));
+
+  // Spared close-tabs go back into grouping. Remaining is computed from the
+  // spare flags rather than from detection alone, so the groups match apply.
+  const closing = new Set(
+    duplicates.filter((cluster) => !cluster.spare).flatMap((cluster) => cluster.close),
+  );
+  const survivors = tabs.filter((tab) => !closing.has(tab.id));
 
   const { groups, remaining: ungrouped } = clusterByDomain(survivors, config);
 
@@ -193,7 +202,9 @@ export function buildPlan(windowId: number, tabs: TabInfo[], config: Config): Gr
     stats: {
       tabCount: tabs.length,
       groupCount: groups.length,
-      wouldClose: duplicates.reduce((total, cluster) => total + cluster.close.length, 0),
+      wouldClose: duplicates
+        .filter((cluster) => !cluster.spare)
+        .reduce((total, cluster) => total + cluster.close.length, 0),
     },
   };
 }

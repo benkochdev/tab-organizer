@@ -42,7 +42,7 @@ describe("buildPlan — domain clustering", () => {
 
     expect(plan.groups).toHaveLength(1);
     expect(plan.groups[0]?.key).toBe("domain:github.com");
-    expect(plan.groups[0]?.label).toBe("Github");
+    expect(plan.groups[0]?.label).toBe("GitHub");
     expect(plan.groups[0]?.tabIds).toEqual([1, 2, 3]);
     expect(plan.ungrouped).toEqual([]);
   });
@@ -62,8 +62,20 @@ describe("buildPlan — domain clustering", () => {
     expect(plan.ungrouped).toEqual([1, 2, 3]);
   });
 
-  it("merges subdomains into their registrable domain", () => {
-    // Pinned behaviour: mail. and docs. are one Google group, not two.
+  it("labels a Google-only pile Google, even when every tab is Gmail", () => {
+    const tabs = [
+      tab(1, "https://mail.google.com/a"),
+      tab(2, "https://mail.google.com/b"),
+      tab(3, "https://mail.google.com/c"),
+    ];
+    const plan = buildPlan(WINDOW, tabs, config({ minGroupSize: 3 }));
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.key).toBe("domain:google.com");
+    expect(plan.groups[0]?.label).toBe("Google");
+  });
+
+  it("still merges mixed Google products when none of them reach minGroupSize", () => {
     const tabs = [
       tab(1, "https://mail.google.com/inbox"),
       tab(2, "https://docs.google.com/doc/1"),
@@ -73,7 +85,88 @@ describe("buildPlan — domain clustering", () => {
 
     expect(plan.groups).toHaveLength(1);
     expect(plan.groups[0]?.key).toBe("domain:google.com");
+    expect(plan.groups[0]?.label).toBe("Google");
     expect(plan.groups[0]?.tabIds).toEqual([1, 2, 3]);
+  });
+
+  it("keeps mixed Google together when only one product reaches minGroupSize", () => {
+    const tabs = [
+      tab(1, "https://mail.google.com/a"),
+      tab(2, "https://mail.google.com/b"),
+      tab(3, "https://mail.google.com/c"),
+      tab(4, "https://docs.google.com/document/d/1"),
+    ];
+    const plan = buildPlan(WINDOW, tabs, config({ minGroupSize: 3 }));
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.key).toBe("domain:google.com");
+    expect(plan.groups[0]?.label).toBe("Google");
+    expect(plan.groups[0]?.tabIds).toEqual([1, 2, 3, 4]);
+  });
+
+  it("splits Google when two products each reach minGroupSize", () => {
+    const tabs = [
+      tab(1, "https://mail.google.com/a"),
+      tab(2, "https://mail.google.com/b"),
+      tab(3, "https://mail.google.com/c"),
+      tab(4, "https://docs.google.com/document/d/1"),
+      tab(5, "https://docs.google.com/document/d/2"),
+      tab(6, "https://docs.google.com/document/d/3"),
+    ];
+    const plan = buildPlan(WINDOW, tabs, config({ minGroupSize: 3 }));
+
+    expect(plan.groups.map((group) => group.key)).toEqual([
+      "domain:google.com:docs",
+      "domain:google.com:gmail",
+    ]);
+    expect(plan.groups.map((group) => group.label)).toEqual(["Docs", "Gmail"]);
+  });
+
+  it("keeps one Wikipedia group when every article is about the same thing", () => {
+    const tabs = [
+      tab(1, "https://en.wikipedia.org/wiki/Toad", { title: "Toad - Wikipedia" }),
+      tab(2, "https://en.wikipedia.org/wiki/Common_toad", { title: "Common toad - Wikipedia" }),
+      tab(3, "https://en.wikipedia.org/wiki/True_toad", { title: "True toad - Wikipedia" }),
+    ];
+    const plan = buildPlan(WINDOW, tabs, config({ minGroupSize: 3 }));
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.key).toBe("domain:wikipedia.org");
+    expect(plan.groups[0]?.label).toBe("Wikipedia");
+  });
+
+  it("keeps mixed Wikipedia together when only one topic reaches minGroupSize", () => {
+    const tabs = [
+      tab(1, "https://en.wikipedia.org/wiki/Toad", { title: "Toad - Wikipedia" }),
+      tab(2, "https://en.wikipedia.org/wiki/Common_toad", { title: "Common toad - Wikipedia" }),
+      tab(3, "https://en.wikipedia.org/wiki/True_toad", { title: "True toad - Wikipedia" }),
+      tab(4, "https://en.wikipedia.org/wiki/Cake", { title: "Cake - Wikipedia" }),
+    ];
+    const plan = buildPlan(WINDOW, tabs, config({ minGroupSize: 3 }));
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.key).toBe("domain:wikipedia.org");
+    expect(plan.groups[0]?.label).toBe("Wikipedia");
+    expect(plan.groups[0]?.tabIds).toEqual([1, 2, 3, 4]);
+  });
+
+  it("splits Wikipedia when two topics each reach minGroupSize", () => {
+    const tabs = [
+      tab(1, "https://en.wikipedia.org/wiki/Toad", { title: "Toad - Wikipedia" }),
+      tab(2, "https://en.wikipedia.org/wiki/Common_toad", { title: "Common toad - Wikipedia" }),
+      tab(3, "https://en.wikipedia.org/wiki/True_toad", { title: "True toad - Wikipedia" }),
+      tab(4, "https://en.wikipedia.org/wiki/Cake", { title: "Cake - Wikipedia" }),
+      tab(5, "https://en.wikipedia.org/wiki/Chocolate_cake", {
+        title: "Chocolate cake - Wikipedia",
+      }),
+      tab(6, "https://en.wikipedia.org/wiki/Birthday_cake", { title: "Birthday cake - Wikipedia" }),
+    ];
+    const plan = buildPlan(WINDOW, tabs, config({ minGroupSize: 3 }));
+
+    expect(plan.groups.map((group) => group.key).sort()).toEqual([
+      "domain:wikipedia.org:cake",
+      "domain:wikipedia.org:toad",
+    ]);
   });
 
   it("keeps GitHub Pages sites apart, because github.io is a public suffix", () => {

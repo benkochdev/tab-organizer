@@ -135,7 +135,9 @@ Then, in `buildPlan`:
    `close` tabs are removed, so the groups shown contain exactly what will exist
    after apply. Skipped entirely when `detectDuplicates` is false.
 2. **Domain clustering** — bucket by eTLD+1, a bucket becomes a group at
-   `minGroupSize` or more. This alone handles most of the mess.
+   `minGroupSize` or more. Known services get real names (`GitHub`). Google
+   splits by product and Wikipedia by title tokens, only when two piles each
+   meet `minGroupSize`.
 3. Whatever is left becomes `ungrouped`.
 
 Stages share one shape, which is what makes adding stage 4 cheap:
@@ -146,10 +148,10 @@ type Stage = (tabs: TabInfo[], ctx: PlanContext) =>
   { groups: GroupProposal[]; remaining: TabInfo[] };
 ```
 
-**Not in v1**, in rough order of how likely I am to want them: known-services
-table (`github.com` -> "Dev"), user-defined domain rules, title-similarity
-clustering over the remainder, stale tabs into an "Archive" group, options page.
-Each is a new `Stage` plus a `Config` field. None of them block shipping.
+**Not in v1**, in rough order of how likely I am to want them: user-defined
+domain rules, title-similarity clustering over the remainder (cross-site topics),
+stale tabs into an "Archive" group, options page. Each is a new `Stage` plus a
+`Config` field. None of them block shipping.
 
 ## Where AI goes (v2, not now)
 
@@ -225,15 +227,19 @@ sort remaining params by key, `null` for anything that is not http/https.
   **byte-identical** for equivalent input — test with shuffled input. A plan that
   reshuffles between runs is unusable in a preview.
 - More qualifying buckets than `maxGroups`: keep the largest, rest to remainder.
-- `label` is the domain minus the public suffix, first letter capitalised:
-  `github.com` -> "Github". Ugly for `t.co`; fine for v1.
-- `key` is `domain:<registrable domain>`. Colour is a deterministic hash of the
-  key into the palette — same domain, same colour, every time.
+- `label` is a known-service name when we have one (`github.com` → `GitHub`);
+  otherwise the domain minus the public suffix, first letter capitalised.
+  Ugly for `t.co`; still fine.
+- `key` is `domain:<registrable domain>`, or `domain:<domain>:<product|token>`
+  after a split. Colour is a deterministic hash of the key into the palette —
+  same key, same colour, every time.
 - empty input; every tab on one domain; every tab on a different domain
 - exactly `minGroupSize` tabs on a domain — boundary, test both sides
-- subdomains: `mail.google.com` and `docs.google.com` both reduce to `google.com`
-  and land in one group. Intended — pin it with a test so changing it is
-  deliberate.
+- subdomains: `mail.google.com` and `docs.google.com` both reduce to `google.com`.
+  They stay one Google group unless two products each reach `minGroupSize`, then
+  they split (Gmail / Docs). One product plus crumbs stays Google.
+- Wikipedia: one topic (or one topic plus crumbs) stays Wikipedia; two topics
+  each at `minGroupSize` split by title token.
 - 500 tabs — well under a frame; a rough timing assertion is enough
 
 ### Duplicates
@@ -248,6 +254,11 @@ sort remaining params by key, `null` for anything that is not http/https.
 
 Newest first. One line each; a paragraph only when the reasoning is not obvious.
 
+- **D-027 (2026-08-27)** — Site grouping stays the default. Known services get
+  real names (`GitHub`). Google splits by product (Gmail/Docs/…) and Wikipedia
+  by title tokens, but only when two piles each meet `minGroupSize`. A dedicated
+  control closes checked duplicates without grouping. Sort-by-domain / title
+  reorders loose tabs only; it is not part of undo.
 - **D-026 (2026-08-26)** — First paint of the popup is a styled shell plus
   spinner, from inline CSS in `index.html`. Vite injects `style.css` via JS in
   dev, so a `<link>` alone is Times-on-white until the bundle runs. The spinner

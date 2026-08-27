@@ -1,11 +1,5 @@
-import type {
-  Config,
-  DuplicateCluster,
-  GroupColor,
-  GroupPlan,
-  GroupProposal,
-  TabInfo,
-} from "./types";
+import { compareStrings, splitMixedSite } from "./sites";
+import type { Config, DuplicateCluster, GroupPlan, GroupProposal, TabInfo } from "./types";
 import { canonicalUrl, registrableDomain } from "./url";
 
 /**
@@ -17,52 +11,8 @@ import { canonicalUrl, registrableDomain } from "./url";
  * produce byte-identical output.
  */
 
-/** Deterministic, locale-independent. `localeCompare` is neither. */
-function compareStrings(a: string, b: string): number {
-  if (a < b) return -1;
-  if (a > b) return 1;
-  return 0;
-}
-
 function byTabIndex(a: TabInfo, b: TabInfo): number {
   return a.index - b.index;
-}
-
-const PALETTE: readonly GroupColor[] = [
-  "blue",
-  "cyan",
-  "green",
-  "grey",
-  "orange",
-  "pink",
-  "purple",
-  "red",
-  "yellow",
-];
-
-/**
- * Same key, same colour, forever — the colour is a property of the domain, not
- * of where it happened to land in this run's sort order.
- */
-function colorForKey(key: string): GroupColor {
-  let hash = 0;
-  for (let i = 0; i < key.length; i += 1) {
-    hash = (Math.imul(hash, 31) + key.charCodeAt(i)) >>> 0;
-  }
-  // The index is always in range; the ?? is how we satisfy
-  // noUncheckedIndexedAccess without reaching for a non-null assertion.
-  return PALETTE[hash % PALETTE.length] ?? "blue";
-}
-
-/**
- * "github.com" -> "Github", "bbc.co.uk" -> "Bbc".
- * Crude, and knowingly ugly for hosts like "t.co". A known-services table
- * replaces this later; until then a wrong-looking label is a cosmetic problem,
- * not a correctness one.
- */
-function labelForDomain(domain: string): string {
-  const head = domain.split(".")[0] ?? domain;
-  return head.charAt(0).toUpperCase() + head.slice(1);
 }
 
 /**
@@ -148,20 +98,26 @@ function clusterByDomain(
   );
 
   const cap = Math.max(0, config.maxGroups);
+  const byId = new Map(tabs.map((tab) => [tab.id, tab]));
+  const splitGroups: GroupProposal[] = [];
+
+  for (const [domain, bucket] of qualifying.slice(0, cap)) {
+    const split = splitMixedSite(domain, bucket, config);
+    splitGroups.push(...split.groups);
+    remaining.push(...split.leftover);
+  }
+
   for (const [, overflow] of qualifying.slice(cap)) remaining.push(...overflow);
 
-  const groups = qualifying.slice(0, cap).map(([domain, bucket]): GroupProposal => {
-    const ordered = [...bucket].sort(byTabIndex);
-    const key = `domain:${domain}`;
+  splitGroups.sort((a, b) => b.tabIds.length - a.tabIds.length || compareStrings(a.key, b.key));
 
-    return {
-      key,
-      label: labelForDomain(domain),
-      color: colorForKey(key),
-      tabIds: ordered.map((tab) => tab.id),
-      reason: `${ordered.length} ${ordered.length === 1 ? "tab" : "tabs"} from ${domain}`,
-    };
-  });
+  const groups = splitGroups.slice(0, cap);
+  for (const overflow of splitGroups.slice(cap)) {
+    for (const id of overflow.tabIds) {
+      const tab = byId.get(id);
+      if (tab !== undefined) remaining.push(tab);
+    }
+  }
 
   remaining.sort(byTabIndex);
 

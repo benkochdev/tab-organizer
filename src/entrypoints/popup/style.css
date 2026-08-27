@@ -322,6 +322,13 @@ p {
   flex: none;
 }
 
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 12px;
+}
+
 /* ---- actions ----------------------------------------------------------- */
 
 .actions {

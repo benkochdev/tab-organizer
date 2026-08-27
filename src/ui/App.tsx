@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { buildPlan } from "@/core/plan";
+import { sortTabIds } from "@/core/sort";
 import {
   type Config,
   DEFAULT_CONFIG,
@@ -18,7 +19,7 @@ import {
 } from "@/platform/apply";
 import { loadUiSettings, saveUiSettings } from "@/platform/settings";
 import { clearSnapshot, loadSnapshotMap, saveSnapshot } from "@/platform/storage";
-import { readCurrentWindow } from "@/platform/tabs";
+import { readCurrentWindow, sortOrganisableTabs } from "@/platform/tabs";
 
 /**
  * Approximations of the tabGroups palette, for the preview dot only. The real
@@ -281,9 +282,20 @@ export function App() {
 
   async function handleApply(plan: GroupPlan): Promise<void> {
     setPhase({ status: "working", label: "Grouping tabs…" });
+    await runApply(plan, [...excluded]);
+  }
 
+  async function handleCloseDuplicates(plan: GroupPlan): Promise<void> {
+    setPhase({ status: "working", label: "Closing duplicates…" });
+    await runApply(
+      plan,
+      plan.groups.map((group) => group.key),
+    );
+  }
+
+  async function runApply(plan: GroupPlan, excludedKeys: readonly string[]): Promise<void> {
     try {
-      const result = await applyPlan(plan, [...excluded], { collapse: collapseNewGroups });
+      const result = await applyPlan(plan, excludedKeys, { collapse: collapseNewGroups });
       const changed =
         result.snapshot.createdGroups.length > 0 || result.snapshot.closedTabs.length > 0;
 
@@ -298,6 +310,21 @@ export function App() {
 
       setUndoable(changed ? result.snapshot : undoable);
       setPhase({ status: "applied", result, failedLabels });
+    } catch (error: unknown) {
+      setPhase({ status: "failed", message: describe(error) });
+    }
+  }
+
+  async function handleSort(by: "domain" | "title"): Promise<void> {
+    if (phase.status !== "ready") return;
+    setPhase({ status: "working", label: "Sorting tabs…" });
+
+    try {
+      await sortOrganisableTabs(phase.windowId, sortTabIds(phase.tabs, by));
+      const loaded = await readState();
+      setUndoable(loaded.snapshot);
+      setCollapseNewGroups(loaded.collapseNewGroups);
+      setPhase({ status: "ready", windowId: loaded.windowId, tabs: loaded.tabs });
     } catch (error: unknown) {
       setPhase({ status: "failed", message: describe(error) });
     }
@@ -385,10 +412,12 @@ export function App() {
         <p className="done">
           {nothingHappened
             ? "Nothing changed."
-            : `Created ${plural(snapshot.createdGroups.length, "group", "groups")}` +
-              (snapshot.closedTabs.length > 0
-                ? `, closed ${plural(snapshot.closedTabs.length, "duplicate", "duplicates")}.`
-                : ".")}
+            : snapshot.createdGroups.length === 0
+              ? `Closed ${plural(snapshot.closedTabs.length, "duplicate", "duplicates")}.`
+              : `Created ${plural(snapshot.createdGroups.length, "group", "groups")}` +
+                (snapshot.closedTabs.length > 0
+                  ? `, closed ${plural(snapshot.closedTabs.length, "duplicate", "duplicates")}.`
+                  : ".")}
         </p>
 
         {phase.failedLabels.length > 0 && (
@@ -559,6 +588,22 @@ export function App() {
           />
           <span>Collapse new groups</span>
         </label>
+      )}
+
+      {phase.tabs.length > 0 && (
+        <div className="tools">
+          {closing > 0 && (
+            <button type="button" onClick={() => void handleCloseDuplicates(plan)}>
+              Close {plural(closing, "duplicate", "duplicates")} now
+            </button>
+          )}
+          <button type="button" onClick={() => void handleSort("domain")}>
+            Sort by domain
+          </button>
+          <button type="button" onClick={() => void handleSort("title")}>
+            Sort by title
+          </button>
+        </div>
       )}
 
       <div className="actions">

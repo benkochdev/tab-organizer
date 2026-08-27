@@ -70,8 +70,13 @@ The unit tests cover the logic; these are the things only a human can see.
 - [ ] Expanding a group lists the tabs it would contain
 - [ ] Unchecking a group excludes it from the apply
 - [ ] Duplicate clusters list the kept title and expand to Keep / Close
+- [ ] “Close N duplicates now” closes them without creating groups
 - [ ] Unchecking a duplicate cluster grows the groups it was taking tabs out of
 - [ ] Expanding "stays where they are" lists the leftover tabs
+- [ ] Mixed Google products (e.g. 3 Gmail + 3 Docs) show as separate groups
+- [ ] Mixed Wikipedia topics split; a pile of one topic stays “Wikipedia”
+- [ ] GitHub group is labelled GitHub, not Github
+- [ ] Sort by domain / title reorders loose tabs, not pinned or already-grouped
 - [ ] Apply actually creates the groups in the tab strip, with the right colours
 - [ ] New groups are collapsed; unchecking "Collapse new groups" leaves them open
 - [ ] Undo puts everything back, including reopening closed duplicates

@@ -80,3 +80,23 @@ export async function readCurrentWindow(): Promise<{ windowId: number; tabs: Tab
 
   return { windowId, tabs: toTabInfo(all, windowId) };
 }
+
+/**
+ * Moves loose tabs into `orderedIds` order, packed just after any pinned tabs.
+ *
+ * Does not invent an order — `orderedIds` comes from core. Grouped and pinned
+ * tabs are left alone; ids that no longer exist are skipped.
+ */
+export async function sortOrganisableTabs(
+  windowId: number,
+  orderedIds: readonly number[],
+): Promise<void> {
+  const all = await browser.tabs.query({ windowId });
+  const live = new Set(all.flatMap((tab) => (tab.id === undefined ? [] : [tab.id])));
+  const pinnedCount = all.filter((tab) => tab.pinned).length;
+  const ids = orderedIds.filter((id) => live.has(id));
+  const [first, ...rest] = ids;
+  if (first === undefined) return;
+
+  await browser.tabs.move([first, ...rest], { index: pinnedCount, windowId });
+}

@@ -65,10 +65,12 @@ so every import is written out.
   `file:`) cannot be grouped or moved. Filter them in the adapter, never in core.
 - Keep `browser_specific_settings.gecko.id` — AMO signing needs it.
 - Firefox action popups can freeze as a **1×1 white dot**. Do not “fix” that
-  by pinning popup height (tried, rejected). Loading UI is static HTML;
-  React mounts only after tabs are read (`loadPopup` then `createRoot`).
-  Width on `body`, not `:root`. No `viewport width=device-width`. See D-026,
-  D-028, and **Known bugs** in DESIGN.md. The header gear is HTML (works while
-  loading) and opens the options page in a tab. Reload the add-on after HTML
-  changes (`npm run dev` restart, or about:debugging → Reload). A signed `.xpi`
-  will not pick up the working tree until you zip and reinstall.
+  by pinning popup height for the whole session (tried, rejected). Boot `body`
+  at **380×120** (`height`, not `min-height` — Firefox ignores min-height in
+  `getContentSize`); it becomes `height: auto` once `#root` has content.
+  Loading CSS is inline in `index.html`; `style.css` is imported from
+  `main.tsx`, never a blocking `<link>`. React mounts only after `loadPopup()`.
+  Width on `body`, not `:root`. No `viewport width=device-width`. See D-031
+  and **Known bugs** in DESIGN.md. Reload the add-on after HTML changes
+  (`npm run dev` restart, or about:debugging → Reload). A signed `.xpi` will
+  not pick up the working tree until you zip and reinstall.

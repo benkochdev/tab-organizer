@@ -303,19 +303,16 @@ sort remaining params by key, `null` for anything that is not http/https.
 
 ## Known bugs
 
-- **1×1 white-dot popup (open).** Clicking the toolbar (or unified-extensions)
-  button sometimes shows a ~1px white square and never grows. First diagnosis
-  (D-026): `createRoot` emptied `#root` before the first commit. Second
-  (D-028): HTML is the loading screen; React mounts only after `loadPopup()`.
-  **Tried and rejected:** pinning `body` to 380×240, `fit.js` bumping height,
-  a 1px width mutation after React. User: do not lock popup dimensions;
-  they believe it is still the loading/empty-root path. After HTML/JS changes,
-  reload the add-on; a signed `.xpi` is stale until re-zipped. Firefox
-  `getContentSize` can ignore `min-height` on `:root`; width belongs on
-  `body`; no `viewport width=device-width` (circular with a 0-wide panel).
-  If the first size is under ~30×10, Firefox may pin panel width/height and
-  never resize — that is why pinning height was attempted, and why it is
-  still the wrong product fix.
+- **1×1 white-dot popup.** Firefox sizes the action popup with
+  `getContentSize` on a preload browser (shown after at most 200ms). It
+  **ignores `min-height`**. If the first size is under ~30×10, it writes
+  width/height onto the XUL browser; later resizes are then circular with a
+  1px viewport. Cause during “Reading tabs…”: boot CSS had no real `height`,
+  and a render-blocking `<link>` to `style.css` delayed DOMContentLoaded past
+  the 200ms timeout. **Fix (D-031):** `body { height: 120px }` (the mock
+  loading size) until `#root` has content, then `height: auto`. Import CSS
+  from `main.tsx`, not a blocking `<link>`. Still no viewport meta, no 240px
+  lock, no `fit.js`. After HTML/JS changes, reload the add-on.
 
 ## Next UI (D-029, shipped chrome)
 
@@ -350,6 +347,18 @@ error / Firefox too old.
 
 Newest first. One line each; a paragraph only when the reasoning is not obvious.
 
+- **D-031 (2026-08-28)** — Firefox ignores `min-height` in popup
+  `getContentSize`; the first used size must be a real `height`. Boot the
+  body at 120px (loading mock), drop to `auto` when React paints. Do not
+  `<link>` `style.css` from the popup HTML — that blocks DOMContentLoaded
+  past the 200ms preload timeout. Amends D-028 (still no 240px lock) and
+  D-030 (`min-width: 0` was not the loading-phase cause).
+- **D-030 (2026-08-28)** — First paint must not be shrink-to-fit collapsible.
+  D-029’s header `min-width: 0` let Firefox’s first `getContentSize` come back
+  ~1×1 while `#boot` was still showing, and the panel never grew. Keep
+  `min-width: 380px` on `body` and `.shell`, `min-height: 48px` on `#boot`; do
+  not pin popup height. Amends D-028 (still no height pin, still no viewport)
+  and D-029.
 - **D-029 (2026-08-28)** — Popup redesign. UX > decoration. Groups are the
   first glance; one primary apply. Duplicates are a compact expandable line.
   Drop Sort by domain/title; replace with “Make tab groups” (default on; off

@@ -1,8 +1,9 @@
 /*
   The first paint of the popup is styled by the <style> block in index.html,
-  not this file. In `npm run dev` Vite turns this <link> into a JS injection,
-  so it arrives with the bundle (~2s). Keep the chrome + spinner rules here in
-  sync with that block, or the loading state jumps when React takes over.
+  not this file. This file is imported from main.tsx so it is not a
+  render-blocking <link> (that delay is what made Firefox's first
+  getContentSize 1×1 in dev). Keep the chrome + spinner rules here in sync
+  with the HTML block, or the loading state jumps when React takes over.
 */
 
 :root {
@@ -44,13 +45,19 @@ html {
   color: CanvasText;
 }
 
-/* Width on body, never html/:root — that is what Firefox measures. Height
-   tracks content; do not pin it. */
+/* Width on body, never html/:root. A real height (not min-height) is the
+   loading floor — Firefox ignores min-height in getContentSize. Drop it
+   once React has painted so the preview can grow. */
 body {
   margin: 0;
   width: 380px;
+  height: 120px;
   background: Canvas;
   color: CanvasText;
+}
+
+body:has(#root:not(:empty)) {
+  height: auto;
 }
 
 .shell:has(#root:not(:empty)) #boot {
@@ -66,7 +73,6 @@ body {
 
 .head-text {
   flex: 1;
-  min-width: 0;
 }
 
 h1 {
@@ -108,6 +114,7 @@ p {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 48px;
   padding: 18px 12px 26px;
 }
 

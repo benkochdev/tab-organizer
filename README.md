@@ -6,7 +6,9 @@ click apply, and every apply can be undone.
 
 Everything is computed locally. No network calls, no telemetry, no LLM.
 
-**Status:** works, in daily use, not published. See [docs/DESIGN.md](docs/DESIGN.md).
+**Status:** works, in daily use, not published. Product brain:
+[docs/DESIGN.md](docs/DESIGN.md) (decisions, backlog, known bugs, next UI).
+How to work in this repo: [CLAUDE.md](CLAUDE.md).
 
 ## Requirements
 
@@ -70,15 +72,17 @@ The unit tests cover the logic; these are the things only a human can see.
 - [ ] Expanding a group lists the tabs it would contain
 - [ ] Unchecking a group excludes it from the apply
 - [ ] Duplicate clusters list the kept title and expand to Keep / Close
-- [ ] “Close N duplicates now” closes them without creating groups
-- [ ] Unchecking a duplicate cluster grows the groups it was taking tabs out of
+- [ ] Popup opens at full size (not a 1×1 white dot); loading spinner then preview
+- [ ] Gear opens the options page; collapse / min size / max groups / duplicates live there
+- [ ] “Make tab groups” off reorders by the preview buckets without creating groups
+- [ ] Duplicates are one compact line; Close now is inside the expanded block
+- [ ] Unchecking the duplicates line grows the groups it was taking tabs out of
 - [ ] Expanding "stays where they are" lists the leftover tabs
 - [ ] Mixed Google products (e.g. 3 Gmail + 3 Docs) show as separate groups
 - [ ] Mixed Wikipedia topics split; a pile of one topic stays “Wikipedia”
 - [ ] GitHub group is labelled GitHub, not Github
-- [ ] Sort by domain / title reorders loose tabs, not pinned or already-grouped
 - [ ] Apply actually creates the groups in the tab strip, with the right colours
-- [ ] New groups are collapsed; unchecking "Collapse new groups" leaves them open
+- [ ] New groups are collapsed; unchecking "Collapse new groups" on the options page leaves them open
 - [ ] Undo puts everything back, including reopening closed duplicates
 - [ ] Undo still offered after closing and reopening the popup
 - [ ] Applying in a second window does not steal the first window's undo

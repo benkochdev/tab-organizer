@@ -1,17 +1,20 @@
-import React from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "@/ui/App";
+import { openOptionsPage } from "@/platform/settings";
+import { App, loadPopup } from "@/ui/App";
 
 const container = document.getElementById("root");
 
-// Our rules forbid `!`, so this is the honest version: if index.html and this file
-// ever disagree about the id, we want a loud error, not a silent blank popup.
 if (!container) {
   throw new Error("popup: #root is missing from index.html");
 }
 
-createRoot(container).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+const gear = document.getElementById("options");
+if (gear) {
+  gear.addEventListener("click", () => {
+    void openOptionsPage();
+  });
+}
+
+const start = await loadPopup();
+
+createRoot(container).render(<App start={start} />);

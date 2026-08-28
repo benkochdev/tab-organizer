@@ -3,11 +3,13 @@
 Firefox MV3 extension that turns hundreds of open tabs into a handful of tab
 groups. It always shows a preview first; nothing is regrouped without a click.
 
-Solo hobby project. Design and open decisions: @docs/DESIGN.md
+Solo hobby project. **Product brain:** @docs/DESIGN.md — shipped behaviour,
+backlog, known bugs, popup + options UI. Read it before changing grouping
+or the popup. **How we work:** this file.
 
 ## Stack
 
-TypeScript (`strict`), WXT, React (popup only), Vitest, Biome, `tldts`.
+TypeScript (`strict`), WXT, React (popup and options page), Vitest, Biome, `tldts`.
 Minimum Firefox **139** — `tabs.group()` landed in 138, `tabGroups.update()`
 (title, colour, collapsed) in 139. No Chrome target.
 
@@ -62,3 +64,11 @@ so every import is written out.
 - Privileged URLs (`about:`, `moz-extension:`, `chrome:`, `view-source:`,
   `file:`) cannot be grouped or moved. Filter them in the adapter, never in core.
 - Keep `browser_specific_settings.gecko.id` — AMO signing needs it.
+- Firefox action popups can freeze as a **1×1 white dot**. Do not “fix” that
+  by pinning popup height (tried, rejected). Loading UI is static HTML;
+  React mounts only after tabs are read (`loadPopup` then `createRoot`).
+  Width on `body`, not `:root`. No `viewport width=device-width`. See D-026,
+  D-028, and **Known bugs** in DESIGN.md. The header gear is HTML (works while
+  loading) and opens the options page in a tab. Reload the add-on after HTML
+  changes (`npm run dev` restart, or about:debugging → Reload). A signed `.xpi`
+  will not pick up the working tree until you zip and reinstall.

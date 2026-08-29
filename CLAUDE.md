@@ -63,6 +63,8 @@ so every import is written out.
   Module-level state does not survive; persist to `browser.storage.session`.
 - Privileged URLs (`about:`, `moz-extension:`, `chrome:`, `view-source:`,
   `file:`) cannot be grouped or moved. Filter them in the adapter, never in core.
+- Already-grouped tabs still never reach core as `TabInfo` (D-005). Pass them as
+  existing-group fingerprints so loose tabs can join (D-034).
 - Keep `browser_specific_settings.gecko.id` — AMO signing needs it.
 - Firefox action popups can freeze as a **1×1 white dot**. Do not “fix” that
   by pinning popup height for the whole session (tried, rejected). Boot `body`

@@ -175,7 +175,8 @@ function proposal(
   };
 }
 
-function colorForKey(key: string): GroupProposal["color"] {
+/** Deterministic palette pick from a group key. Same key, same colour, every time. */
+export function colorForKey(key: string): GroupProposal["color"] {
   const palette: GroupProposal["color"][] = [
     "blue",
     "cyan",

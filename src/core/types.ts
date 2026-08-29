@@ -47,6 +47,23 @@ export type GroupProposal = {
   tabIds: number[];
   /** Shown in the preview. A grouping you cannot explain is one nobody trusts. */
   reason: string;
+  /**
+   * When set, apply adds these tabs to this existing Firefox group instead of
+   * creating a new one. Omitted for groups we would create.
+   */
+  existingGroupId?: number;
+};
+
+/**
+ * A group that already exists in the window. Member tabs never reach the core
+ * as TabInfo (D-005); these fingerprints are how loose tabs join them (D-034).
+ */
+export type ExistingGroup = {
+  id: number;
+  title: string;
+  color: GroupColor;
+  /** http(s) URLs of unpinned members, used only to decide who belongs. */
+  urls: string[];
 };
 
 export type DuplicateCluster = {
@@ -70,6 +87,19 @@ export type GroupPlan = {
   stats: { tabCount: number; groupCount: number; wouldClose: number };
 };
 
+export type DomainRuleAction = "always-name" | "never-group" | "merge-into";
+
+/**
+ * A user override of default domain grouping. `id` is UI-only and unused here.
+ * Empty patterns, and empty values on always-name / merge-into, are skipped by
+ * the rules stage — never-group ignores `value`.
+ */
+export type DomainRule = {
+  pattern: string;
+  action: DomainRuleAction;
+  value: string;
+};
+
 export type Config = {
   /** Below this, a domain is not a group. Two tabs is not clutter. */
   minGroupSize: number;
@@ -78,6 +108,8 @@ export type Config = {
   detectDuplicates: boolean;
   /** Canonical URLs whose duplicate clusters are listed but not closed. */
   spareDuplicateCanonicals: string[];
+  /** Host/site overrides applied after duplicates and before domain clustering. */
+  rules: DomainRule[];
 };
 
 export const DEFAULT_CONFIG: Config = {
@@ -85,4 +117,5 @@ export const DEFAULT_CONFIG: Config = {
   maxGroups: 12,
   detectDuplicates: true,
   spareDuplicateCanonicals: [],
+  rules: [],
 };

@@ -1,5 +1,5 @@
 import { type Browser, browser } from "wxt/browser";
-import type { TabInfo } from "@/core/types";
+import type { ExistingGroup, GroupColor, TabInfo } from "@/core/types";
 
 /**
  * Reading tabs out of the browser and into plain data. This file decides
@@ -24,6 +24,25 @@ const PRIVILEGED_SCHEMES: readonly string[] = [
 /** The tabGroups API's "this tab is in no group" sentinel. */
 const TAB_GROUP_ID_NONE = -1;
 
+const GROUP_COLORS: readonly GroupColor[] = [
+  "blue",
+  "cyan",
+  "green",
+  "grey",
+  "orange",
+  "pink",
+  "purple",
+  "red",
+  "yellow",
+];
+
+function parseGroupColor(value: string): GroupColor {
+  for (const color of GROUP_COLORS) {
+    if (color === value) return color;
+  }
+  return "grey";
+}
+
 function isPrivileged(url: string): boolean {
   return PRIVILEGED_SCHEMES.some((scheme) => url.startsWith(scheme));
 }
@@ -34,7 +53,7 @@ function isPrivileged(url: string): boolean {
  * Excluded, and each for a different reason: pinned tabs (the user placed them
  * there on purpose), privileged URLs (the browser refuses to move them), and
  * tabs that already belong to a group (if you grouped it, that was deliberate —
- * see D-005; this is also what makes applying twice a no-op).
+ * see D-005; those groups are summarised separately so loose tabs can join them).
  */
 function toTabInfo(tabs: readonly Browser.tabs.Tab[], windowId: number): TabInfo[] {
   const organisable: TabInfo[] = [];
@@ -64,13 +83,64 @@ function toTabInfo(tabs: readonly Browser.tabs.Tab[], windowId: number): TabInfo
 }
 
 /**
- * The window the popup was opened from, plus its organisable tabs.
+ * Existing tab groups in this window, as fingerprints the core can match against.
  *
- * Exactly one query. Firefox serialises every tab's URL and title across the
+ * Member tabs stay out of TabInfo (D-005). Privileged and pinned members are
+ * omitted from the URL list because they are not grouping evidence.
+ */
+async function readExistingGroups(
+  tabs: readonly Browser.tabs.Tab[],
+  windowId: number,
+): Promise<ExistingGroup[]> {
+  if (typeof browser.tabGroups.query !== "function") return [];
+
+  let listed: Browser.tabGroups.TabGroup[];
+  try {
+    listed = await browser.tabGroups.query({ windowId });
+  } catch {
+    return [];
+  }
+
+  const byId = new Map<number, { title: string; color: GroupColor; urls: string[] }>();
+  for (const group of listed) {
+    byId.set(group.id, {
+      title: group.title ?? "",
+      color: parseGroupColor(group.color),
+      urls: [],
+    });
+  }
+
+  for (const tab of tabs) {
+    if (tab.groupId === undefined || tab.groupId === TAB_GROUP_ID_NONE) continue;
+    const group = byId.get(tab.groupId);
+    if (group === undefined) continue;
+    if (tab.pinned) continue;
+    if (tab.url === undefined || isPrivileged(tab.url)) continue;
+    group.urls.push(tab.url);
+  }
+
+  const existing: ExistingGroup[] = [];
+  for (const [id, group] of byId) {
+    if (group.urls.length === 0) continue;
+    existing.push({ id, title: group.title, color: group.color, urls: group.urls });
+  }
+  existing.sort((a, b) => a.id - b.id);
+  return existing;
+}
+
+/**
+ * The window the popup was opened from, plus its organisable tabs and the
+ * groups already in that window.
+ *
+ * Exactly one tab query. Firefox serialises every tab's URL and title across the
  * IPC boundary on each one, so asking twice — once for the window id, once for
  * the tabs — is a cost the user waits through while the popup sits empty.
  */
-export async function readCurrentWindow(): Promise<{ windowId: number; tabs: TabInfo[] }> {
+export async function readCurrentWindow(): Promise<{
+  windowId: number;
+  tabs: TabInfo[];
+  existingGroups: ExistingGroup[];
+}> {
   const all = await browser.tabs.query({ currentWindow: true });
   const windowId = all[0]?.windowId;
 
@@ -78,7 +148,11 @@ export async function readCurrentWindow(): Promise<{ windowId: number; tabs: Tab
     throw new Error("No current window.");
   }
 
-  return { windowId, tabs: toTabInfo(all, windowId) };
+  return {
+    windowId,
+    tabs: toTabInfo(all, windowId),
+    existingGroups: await readExistingGroups(all, windowId),
+  };
 }
 
 /**

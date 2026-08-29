@@ -140,7 +140,14 @@ export function googleProduct(url: string): string | null {
   return GOOGLE_HOST_PRODUCT[host] ?? null;
 }
 
-function titleTokens(title: string): string[] {
+/**
+ * Title words used for in-site Wikipedia splits and cross-site topics.
+ *
+ * Guarantees lowercase tokens of 3+ alphanumeric characters, stopwords dropped,
+ * first occurrence kept, suffix after ` - ` / ` | ` / `:` discarded so
+ * "Toad - Wikipedia" yields `toad`.
+ */
+export function titleTokens(title: string): string[] {
   const stripped = title.toLowerCase().replace(/\s*[-–—|:].*$/, "");
   const words = stripped.match(/[a-z0-9]{3,}/g) ?? [];
   const seen = new Set<string>();

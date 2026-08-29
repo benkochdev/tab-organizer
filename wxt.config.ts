@@ -1,4 +1,5 @@
 import { defineConfig } from "wxt";
+import { IDLE_FIXTURE_URL } from "./src/platform/idle-fixture";
 
 export default defineConfig({
   // Source lives under src/, so WXT looks for src/entrypoints/ instead of ./entrypoints/.
@@ -18,7 +19,9 @@ export default defineConfig({
   modules: ["@wxt-dev/module-react"],
 
   // A fixture window so `npm run dev` exercises groups, duplicates, leftovers,
-  // and a host with no registrable domain — without opening tabs by hand.
+  // a host with no registrable domain, a cross-site Lisbon topic (D-035), and
+  // one idle tab for Archive (lastAccessed is faked in the adapter; Firefox
+  // will not let us write it on a real tab).
   webExt: {
     startUrls: [
       "https://github.com/wxt-dev/wxt",
@@ -34,6 +37,10 @@ export default defineConfig({
       "https://stackoverflow.com/questions/1",
       "https://stackoverflow.com/questions/2",
       "http://localhost:3000/",
+      "https://en.wikipedia.org/wiki/Lisbon",
+      "https://en.wikivoyage.org/wiki/Lisbon",
+      "https://www.britannica.com/place/Lisbon",
+      IDLE_FIXTURE_URL,
     ],
   },
 

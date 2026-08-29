@@ -1,22 +1,20 @@
 import { browser } from "wxt/browser";
-import { DEFAULT_CONFIG, type DomainRuleAction } from "@/core/types";
+import { DEFAULT_CONFIG, type DomainRuleAction, type GroupingMode } from "@/core/types";
 
 /**
  * Preferences that outlive a session. Collapse, thresholds, and the rest of the
  * options page live in `storage.local` rather than `storage.session` because they
  * are not per-window facts.
  *
- * Settings the plan pipeline does not read yet (topics, archive, AI) are still
- * persisted here so the options page is the source of truth when those stages
- * land. Rules are persisted here and read by `buildPlan`. Loading never throws:
- * missing or malformed storage is defaults.
+ * Settings the plan pipeline does not read yet (AI) are still persisted here so
+ * the options page is the source of truth when that stage lands. Rules, grouping
+ * mode, and archive are persisted here and read by `buildPlan`. Loading never
+ * throws: missing or malformed storage is defaults.
  */
 
 const SETTINGS_KEY = "ui.settings";
 
-export type GroupingMode = "sites" | "topics";
-
-export type { DomainRuleAction };
+export type { DomainRuleAction, GroupingMode };
 
 export type DomainRule = {
   id: string;
@@ -122,9 +120,4 @@ export async function loadUiSettings(): Promise<UiSettings> {
 export async function saveUiSettings(patch: Partial<UiSettings>): Promise<void> {
   const current = await loadUiSettings();
   await browser.storage.local.set({ [SETTINGS_KEY]: { ...current, ...patch } });
-}
-
-/** Opens the options page. Firefox closes the popup when focus moves. */
-export async function openOptionsPage(): Promise<void> {
-  await browser.runtime.openOptionsPage();
 }

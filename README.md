@@ -59,9 +59,13 @@ dev. The loading spinner is styled from the first paint either way.
 
 `npm run dev` opens a fixture window: a GitHub group, a Google group (mail /
 docs / drive), an example.com duplicate (www + utm), two Stack Overflow tabs
-that stay ungrouped, Hacker News, and a localhost tab with no registrable
-domain. That is enough to click through preview, duplicates, leftovers, apply,
-and undo.
+that stay ungrouped, Hacker News, a localhost tab with no registrable domain,
+and three one-off Lisbon pages (Wikipedia, Wikivoyage, Britannica). Those last
+three only become a **Lisbon** group when Options → Grouping is **Topics across
+sites**; under Sites they stay leftovers. There is also `example.net/old`, which
+the adapter pretends is unused (Firefox cannot set `lastAccessed` on a tab).
+Turn Archive on in Options and that tab is the Archive row. That is enough to
+click through preview, duplicates, leftovers, topics, archive, apply, and undo.
 
 ## Manual check before a release
 
@@ -73,11 +77,13 @@ The unit tests cover the logic; these are the things only a human can see.
 - [ ] Unchecking a group excludes it from the apply
 - [ ] Duplicate clusters list the kept title and expand to Keep / Close
 - [ ] Popup opens at full size (not a 1×1 white dot); loading spinner then preview
-- [ ] Gear opens the options page; collapse / min size / max groups / duplicates live there
+- [ ] Gear opens the options page during “Reading tabs…” as well as after load
 - [ ] “Make tab groups” off reorders by the preview buckets without creating groups
 - [ ] Duplicates are one compact line; Close now is inside the expanded block
 - [ ] Unchecking the duplicates line grows the groups it was taking tabs out of
 - [ ] Expanding ungrouped tabs lists the leftover tabs
+- [ ] Topics mode (options) groups the three Lisbon leftovers; Sites leaves them ungrouped
+- [ ] Archive (options) puts idle tabs on an Archive row; one tab is enough
 - [ ] Mixed Google products (e.g. 3 Gmail + 3 Docs) show as separate groups
 - [ ] Mixed Wikipedia topics split; a pile of one topic stays “Wikipedia”
 - [ ] GitHub group is labelled GitHub, not Github

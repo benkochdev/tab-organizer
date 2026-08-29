@@ -49,7 +49,9 @@ so every import is written out.
 - `src/core/` is pure: no `browser.*`, no I/O, no `Date.now()`, no
   `Math.random()`. Time is a parameter.
 - `src/platform/` is the only place `browser.*` appears, and it makes no
-  decisions.
+  decisions. Exception: `src/public/open-options.js` calls
+  `browser.runtime.openOptionsPage()` so the popup gear works before modules
+  load.
 - If you're writing an `if` in `src/platform/` or `src/ui/`, the decision
   probably belongs in `src/core/`.
 - Exported core functions get a one-line doc comment stating what they
@@ -72,6 +74,10 @@ so every import is written out.
   `getContentSize`); it becomes `height: auto` once `#root` has content.
   Loading CSS is inline in `index.html`; `style.css` is imported from
   `main.tsx`, never a blocking `<link>`. React mounts only after `loadPopup()`.
+  The header gear must not wait on that module: it is an `options.html` link
+  plus classic `src/public/open-options.js` (copied to the extension root).
+  Do not move the click handler into `main.tsx` — in `npm run dev` the Vite
+  graph is not loaded yet while “Reading tabs…” is showing.
   Width on `body`, not `:root`. No `viewport width=device-width`. Popup
   light/dark is explicit panel colours plus `color-scheme` on `:root` —
   `Canvas` in the action popup often stays light (D-032). See D-031

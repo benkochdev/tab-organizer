@@ -4,27 +4,27 @@ Everything about how this thing works: types, pipeline, what to build in what
 order, and the decisions that got us here. One file on purpose. This is the
 product brain. `CLAUDE.md` is how we edit the repo.
 
-## Where things stand (2026-08-28)
+## Where things stand (2026-08-29)
 
 **Shipped (daily use, not AMO-listed).** Preview → apply → undo. Site grouping
 by eTLD+1. Known-service labels (`GitHub`). Google splits by product and
 Wikipedia by title token only when two piles each meet `minGroupSize`.
-Custom domain rules (D-033) run after duplicates and before site clustering.
-Loose tabs join existing groups (D-034) even when there is only one of them.
-D-029 popup + options UI: groups first, compact duplicates line, one primary
-button, “Make tab groups” (off = reorder only), gear → options tab. Collapse,
-thresholds, and duplicate detection live on the options page and feed
-`buildPlan` / apply. Undo per window in `storage.session`. Popup: HTML
-loading screen, React starts after `loadPopup()`. Do not pin popup height.
+Custom domain rules (D-033). Loose tabs join existing groups (D-034). Topics
+(D-035) cluster leftovers by title after sites, when that mode is on. Archive
+(D-038) peels idle tabs into one group row when enabled.
+D-029 popup + options UI. Collapse, thresholds, duplicates, rules, and grouping
+mode live on the options page and feed `buildPlan` / apply. Undo per window in
+`storage.session`. Popup: HTML loading screen, React starts after `loadPopup()`.
+Do not pin popup height. `npm run dev` fixture includes three Lisbon leftovers
+for topics, and `example.net/old` whose `lastAccessed` the adapter reports as
+0 in dev only (Firefox cannot write that field).
 
-**Next.** Topic clustering, Archive as a group row, and AI (preview stays
-local; button label already follows the options toggle). Settings for those
-are saved; they do not change the plan yet. Do not change `src/core/` until a
-stage actually needs a new `Config` field.
+**Next.** AI is parked (D-036). Daily use drives anything else.
 
 **Not doing (still true).** Per-tab exclude, duplicate survivor picker, i18n,
-host permission, billing, Chrome, CI, a background script that decides
-anything.
+host permission, billing / paywall, Chrome, CI, a background script that
+decides anything, a “create group” control in the popup (D-037 — Firefox
+already can).
 
 ## The one idea
 
@@ -55,7 +55,7 @@ This is not architecture astronautics. It buys three concrete things:
     [platform] toTabInfo()           drop pinned, privileged, already-grouped
             |                        existing groups kept as fingerprints
             v
-    [core] buildPlan(tabs, config, existingGroups)   PURE
+    [core] buildPlan(tabs, config, existingGroups, now)   PURE
             |
             v
     [ui] <PlanPreview plan={...} />  user unchecks groups and duplicate clusters
@@ -123,6 +123,9 @@ type Config = {
   detectDuplicates: boolean; // default true
   spareDuplicateCanonicals: string[]; // default [] — clusters to list but not close
   rules: DomainRule[];       // default [] — host/site overrides, D-033
+  groupingMode: "sites" | "topics"; // default "sites" — topics only on leftovers
+  archiveEnabled: boolean;  // default false
+  archiveDays: number;      // default 14
 };
 
 type Snapshot = {
@@ -138,6 +141,7 @@ declare function buildPlan(
   tabs: TabInfo[],
   config: Config,
   existingGroups?: ExistingGroup[],
+  now?: number,
 ): GroupPlan;
 
 // impure, src/platform/apply.ts
@@ -153,9 +157,8 @@ declare function restore(snapshot: Snapshot): Promise<void>;
 `reason` on every proposal is deliberate. A grouping the user cannot explain is a
 grouping the user will not trust, and the field costs nothing to carry.
 
-`now` is unused in v1 — stale-tab detection is the first thing that needs it. It
-stays in the signature because it is the seam that keeps the core pure, and
-threading it in later would touch every call site.
+`now` is used by Archive (D-038). It stays in the signature so the core never
+calls `Date.now()`. The popup passes it in.
 
 ## The pipeline
 
@@ -173,7 +176,12 @@ Then, in `buildPlan`:
    everything downstream, so unchecking a cluster grows the groups. Other
    `close` tabs are removed, so the groups shown contain exactly what will exist
    after apply. Skipped entirely when `detectDuplicates` is false.
-2. **Join existing groups** — a loose tab joins an existing group when they share
+2. **Archive** — if enabled, tabs idle for `archiveDays` (compared to `now`,
+   never `Date.now()`) become one Archive row. One tab is enough. never-group
+   tabs are skipped. If a group titled Archive already exists, idle tabs join it
+   (D-034 apply path). Counts toward `maxGroups`. `lastAccessed` 0 is “very long
+   ago” once `now` is past the threshold.
+3. **Join existing groups** — a loose tab joins an existing group when they share
    a host, a Google product, or a site, or when an always-name / merge-into rule
    matches the group's title. One tab is enough. never-group tabs do not join.
    Host beats product beats site. A Gmail-only group does not take Docs tabs.
@@ -181,19 +189,22 @@ Then, in `buildPlan`:
    proposals do not consume `maxGroups`. Apply adds the tabs with
    `tabs.group({ groupId })` and does not retitle, recolor, or collapse the
    existing group. Undo ungroups only the tabs that were added.
-3. **Domain rules** — after joins, before site clustering, so they win over
-   Sites (and later AI). Empty pattern skipped; empty value skips always-name /
-   merge-into; never-group ignores value. Matching is D-033. never-group tabs go
-   to ungrouped. always-name / merge-into pull matching tabs into `rule:<value>`
-   groups (same trimmed value = one group). Rule groups fill `maxGroups` first
-   (size desc, key asc) and may be smaller than `minGroupSize`. Merge of two
-   hosts on the same site that cover that site is a no-op; merge is for one host
-   or two different sites.
-4. **Domain clustering** — remainder, bucket by eTLD+1, a bucket becomes a group
+4. **Domain rules** — after joins, before site clustering. Empty pattern skipped;
+   empty value skips always-name / merge-into; never-group ignores value.
+   Matching is D-033. never-group tabs go to ungrouped. always-name / merge-into
+   pull matching tabs into `rule:<value>` groups (same trimmed value = one group).
+   Rule groups fill leftover `maxGroups` slots first (size desc, key asc) and may
+   be smaller than `minGroupSize`. Merge of two hosts on the same site that cover
+   that site is a no-op; merge is for one host or two different sites.
+5. **Domain clustering** — remainder, bucket by eTLD+1, a bucket becomes a group
    at `minGroupSize` or more, using leftover `maxGroups` slots. Known services
    get real names (`GitHub`). Google splits by product and Wikipedia by title
    tokens, only when two piles each meet `minGroupSize`.
-5. Whatever is left becomes `ungrouped`.
+6. **Topics** — if `groupingMode` is `topics`, leftover tabs after site grouping
+   are clustered by shared title tokens (same tokenizer as in-site Wikipedia).
+   A token covering the whole remainder is still a topic. `minGroupSize` applies.
+   Uses leftover `maxGroups` slots after site groups. Sites mode skips this.
+7. Whatever is left becomes `ungrouped`.
 
 Stages share one shape, which is what makes adding stage 4 cheap:
 
@@ -210,44 +221,50 @@ almost all of it. Each grouping idea is still a new `Stage` plus a `Config`
 field.
 
 1. ~~**Options page**~~ (gear in popup header) — one scrolling page, headings,
-   no tabs. Collapse-new-groups, min group size, max groups, and duplicate
-   detection are wired. Grouping default / AI / archive are saved only. Rules
-   are applied (D-033).
+   no tabs. Collapse, thresholds, duplicates, rules, grouping mode, and join
+   existing are wired. Archive is applied (D-038). AI controls are saved only.
 2. ~~**“Make tab groups” toggle**~~ on the popup, default on. Off = same site
    buckets, only reorder the strip (no Firefox tab-group chrome). Replaced
    Sort by domain / title.
 3. ~~**Duplicates compact line**~~ — one row under groups; expand for clusters;
    close-now lives inside that block, not next to the primary button.
-4. ~~**Custom domain rules**~~ — always-name / never-group / merge-into. Matching
-   is D-033. Wired into `buildPlan`. Options is still the editor. Pattern matching is locked in D-033: exact host
-   or exact site, no wildcards. Merge of two hosts on the same site is a
-   no-op (sites already share a group). Merge is for one host, or two sites.
-5. **Cross-site topics** — title-similarity over the remainder after domain
-   clustering. Radio saved in options; sites still run.
-   Wikipedia/Google *in-site* splits already ship (D-027).
-6. **Archive** — stale tabs as a normal proposed group row when enabled.
-   Toggle and days are saved; no Archive row yet.
-7. **AI** — see below. Default **off**. Button label follows the toggle;
-   nothing is sent.
+4. ~~**Custom domain rules**~~ — always-name / never-group / merge-into. D-033.
+   Wired into `buildPlan`. Options is the editor.
+5. ~~**Join existing groups**~~ — D-034. One leftover tab joins a matching
+   group instead of forming a duplicate site group.
+6. ~~**Cross-site topics**~~ — D-035. Title tokens over the remainder after
+   domain clustering. Sites still run first. Wikipedia/Google *in-site* splits
+   stay D-027.
+7. ~~**Archive**~~ — D-038. Idle tabs as a normal group row. Toggle and days
+   on options. One idle tab is enough. Joins an existing Archive group if present.
+8. **AI** — parked (D-036). Toggle and button label exist. Nothing is sent.
+   Not required for grouping across sites (topics already do that). If it
+   comes back: BYOK, visible host/network permission, preview stays local.
+   No paywall.
 
 Still not in the product: per-tab exclude (D-007), survivor picker, i18n
-(D-003), host permission in v1 (D-002), billing.
+(D-003), host permission (D-002), billing.
 
-## Where AI goes (not now, shape locked)
+## Where AI goes (parked, D-036)
 
-An optional stage that runs **instead of** title clustering, on the **same
-input**: the remainder after domain clustering. Same output type. The popup
-preview is **always the local deterministic plan** (instant, no network).
+Topics (D-035) already cluster leftovers across sites, locally, with no
+network. AI is not needed for that job. It would only help when titles share no
+token (“Hotel Tivoli” + “Alfama walk” + a TAP confirmation are all a trip).
+Do not add a host permission or a paywall for a feature that is not earning
+its keep.
 
-- Toggle in **options**, default off. Greyed out with an explanation when
-  offline. Placeholder for a future API key is fine; no billing UI.
-- Request fires only when the user hits the popup **primary button**
-  (explicit click). Not when the popup opens.
-- If the toggle is on, the primary button must say so (“Group N tabs with
-  AI”). Undo is the safety net. If AI is slow or unavailable, fall back to
-  the deterministic plan.
-- It never sees every tab. Enabling it later is a **visible** new permission
-  / network event (D-002).
+If it comes back, the locked shape still holds: an optional stage **instead of**
+title clustering, on the **same input** (remainder after domain clustering).
+Same output type. The popup preview is **always** the local deterministic plan
+(instant, no network).
+
+- Toggle in **options**, default off. Greyed out when offline. **BYOK** (paste
+  an API key). No billing UI, no paywall.
+- Request fires only on the popup **primary button**, never when the popup
+  opens. Button says “Group N tabs with AI”. Undo is the safety net. Slow or
+  unavailable → fall back to the local plan.
+- It never sees every tab. Enabling it is a **visible** new permission /
+  network event (D-002).
 
 ## Build order
 
@@ -361,6 +378,30 @@ sort remaining params by key, `null` for anything that is not http/https.
 - Wikipedia topic groups all share `wikipedia.org`; a new article joins the
   larger one. Splitting by title token is not re-run against existing groups.
 
+### Topics (D-035)
+
+- Sites mode: leftovers stay ungrouped. Topics mode: same leftovers may group.
+- GitHub (or any site group) is formed first and is not re-clustered by title.
+- Three tabs on a.com / b.com / c.com titled around Lisbon → `topic:lisbon`.
+- Two tabs sharing a token stay ungrouped (`minGroupSize`).
+- Two topics each at `minGroupSize` both peel. One token covering everyone is
+  still a topic (unlike in-site Wikipedia).
+- Stopwords (`the`, `new`, …) never form a topic.
+- never-group tabs are not in the leftover pile.
+- Leftover `maxGroups` slots after site groups; larger topics kept first.
+
+### Archive (D-038)
+
+- Off: idle tabs still site-group. On: they become one Archive row, even below
+  `minGroupSize`.
+- Fresh tabs (`lastAccessed` within `archiveDays`) stay in the rest of the plan.
+- never-group tabs are not archived.
+- An existing group titled Archive is extended, not duplicated.
+- Duplicates still run first.
+- `now - lastAccessed >= archiveDays` days. `lastAccessed` 0 plus a real `now`
+  counts as idle. The `npm run dev` tab `https://example.net/old` is reported
+  as 0 in the adapter so Archive does not need a real day of waiting.
+
 ### Duplicates
 
 - three tabs on the same canonical URL -> keep one, close two
@@ -390,8 +431,7 @@ follows content, max ~600. One scroller for lists; header/gear/actions stay.
 
 **Popup first glance:** groups (checkbox, colour, name, reason,
 expand titles). All/None only if 2+ groups. Quiet leftovers line. Archive,
-when enabled, is just another group row (not yet: no core stage). Gear
-top-right → options.
+when enabled, is just another group row. Gear top-right → options.
 
 **Duplicates:** one compact line (“N duplicates, close on apply”);
 expand for clusters; close-now inside that block.
@@ -405,8 +445,8 @@ action, default on.
 Group/Close/Sort row, grouping-mode segmented control, thresholds.
 
 **Options:** one page, headings in this order — Grouping (sites default /
-topics), AI (off, offline-disabled), New groups (collapse), Thresholds,
-Duplicates, Archive, Rules (host or site, not “domain or pattern”).
+topics across leftovers), AI (off, offline-disabled), New groups (collapse),
+Thresholds, Duplicates, Archive, Rules (host or site, not “domain or pattern”).
 
 **States to keep:** loading (HTML spinner), working, empty, applied + undo,
 error / Firefox too old.
@@ -415,14 +455,23 @@ error / Firefox too old.
 
 Newest first. One line each; a paragraph only when the reasoning is not obvious.
 
-- **D-033 (2026-08-29)** — A rule pattern is a hostname, not a URL, glob, or
-  substring. Empty pattern: skip the rule. Normalise like `url.ts` (lower
-  case, trailing dot, leading `www.`). If the pattern equals the tab’s host,
-  only that host matches (`mail.foo.com` does not include `app.foo.com`). If
-  it equals the registrable domain, the whole site matches (`github.com`
-  includes `gist.github.com`). Host beats site when both could apply. No
-  `*`, no “contains”. `amazon.de` is not `amazon.com`. Amends the D-029
-  rules row (still saved only until a stage reads them).
+- **D-038 (2026-08-29)** — Archive peels idle tabs after duplicates and before
+  join. `now` is a parameter. One idle tab is enough. never-group wins.
+  `lastAccessed` 0 is very long ago. Join an existing group titled Archive
+  rather than creating a second one. Counts toward maxGroups.
+- **D-037 (2026-08-29)** — The popup does not grow a “create group” control.
+  Firefox already groups tabs. This add-on proposes a plan; uncheck is the
+  edit. Manual grouping stays native (D-005, D-007).
+- **D-036 (2026-08-29)** — AI is parked. Topics already group leftovers across
+  sites. Do not add a host permission or a paywall for that. If AI returns, it
+  is BYOK, apply-time only, preview stays local (amends the D-029 AI toggle:
+  the control can stay; it does not ship a network stage).
+- **D-035 (2026-08-29)** — Topics cluster leftovers by title after site grouping.
+  Sites stay the default. Same tokenizer as in-site Wikipedia (D-027), but a
+  token covering the whole remainder is still a topic. When tokens tie on size,
+  prefer the one that is the first title token of more members, then code units.
+  `minGroupSize` applies; leftover `maxGroups` slots after site groups. never-group
+  tabs do not join a topic.
 - **D-034 (2026-08-29)** — Loose tabs join existing groups instead of forming a
   second group of the same site. One tab is enough. Already-grouped tabs still
   never reach core as TabInfo (D-005); the adapter passes group fingerprints.
@@ -435,8 +484,8 @@ Newest first. One line each; a paragraph only when the reasoning is not obvious.
   (pattern equals tab host) beats site match (pattern equals eTLD+1). amazon.de
   is not amazon.com. Merge of two hosts on the same site is a no-op; merge is for
   one host or two different sites. Rules run after duplicates, before domain
-  clustering; they win over Sites (and later AI). Rule groups fill maxGroups
-  first and may be smaller than minGroupSize.
+  clustering; they win over Sites. Rule groups fill maxGroups first and may be
+  smaller than minGroupSize.
 - **D-032 (2026-08-29)** — Popup light/dark uses the mock’s panel tokens
   (`#ffffff` / `#2b2a33`) and sets `color-scheme` on `:root`, not `Canvas`.
   In the action popup `Canvas` often stays light, so the panel never flips.
@@ -458,8 +507,8 @@ Newest first. One line each; a paragraph only when the reasoning is not obvious.
   first glance; one primary apply. Duplicates are a compact expandable line.
   Drop Sort by domain/title; replace with “Make tab groups” (default on; off
   = reorder only). Settings and mode live on an options page opened from a
-  header gear. AI is an options toggle, default off, request on Apply,
-  preview stays local (no network in this build). Archive is a normal group
+  header gear. AI is an options toggle, default off (parked, D-036); if it
+  ever runs, request on Apply, preview stays local. Archive is a normal group
   row when the stage exists. Native Firefox chrome. Amends D-020 (duplicates
   still per-cluster in the data, quieter in the UI), D-022 (collapse moved
   to options), D-027 (sort left the popup).
@@ -467,7 +516,10 @@ Newest first. One line each; a paragraph only when the reasoning is not obvious.
   not mount until tabs are read (`loadPopup` then `createRoot`); the first
   commit is already the preview (never `null`). `#boot` sits outside `#root`
   and hides when React paints. Popup height tracks content; **do not pin
-  it.** Width stays on `body`, not `:root`. No viewport meta. Amends D-026.
+  it.** Width stays on `body`, not `:root`. No viewport meta. The header
+  gear is a link to `options.html` plus classic `open-options.js` (publicDir,
+  not the popup module) so it works during “Reading tabs…”, before Vite has
+  loaded `main.tsx`. Amends D-026.
 - **D-027 (2026-08-27)** — Site grouping stays the default. Known services get
   real names (`GitHub`). Google splits by product (Gmail/Docs/…) and Wikipedia
   by title tokens, but only when two piles each meet `minGroupSize`. A dedicated

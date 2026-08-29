@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MS_PER_DAY } from "./archive";
 import { buildPlan } from "./plan";
 import {
   type Config,
@@ -690,5 +691,212 @@ describe("buildPlan — join existing groups", () => {
 
     expect(plan.groups).toEqual([]);
     expect(plan.ungrouped).toEqual([1]);
+  });
+});
+
+describe("buildPlan — topics", () => {
+  it("does not cluster leftovers by title when grouping mode is sites", () => {
+    const tabs = [
+      tab(1, "https://a.com/x", { title: "Lisbon hotels" }),
+      tab(2, "https://b.com/x", { title: "Lisbon map" }),
+      tab(3, "https://c.com/x", { title: "Lisbon weather" }),
+    ];
+    const plan = buildPlan(WINDOW, tabs, config({ minGroupSize: 3, groupingMode: "sites" }));
+
+    expect(plan.groups).toEqual([]);
+    expect(plan.ungrouped).toEqual([1, 2, 3]);
+  });
+
+  it("clusters leftovers by title after site grouping", () => {
+    const tabs = [
+      ...tabsOn("github.com", 3, 1),
+      tab(10, "https://a.com/x", { title: "Lisbon hotels" }),
+      tab(11, "https://b.com/x", { title: "Lisbon map" }),
+      tab(12, "https://c.com/x", { title: "Lisbon weather" }),
+    ];
+    const plan = buildPlan(WINDOW, tabs, config({ minGroupSize: 3, groupingMode: "topics" }));
+
+    expect(plan.groups.map((group) => group.key).sort()).toEqual([
+      "domain:github.com",
+      "topic:lisbon",
+    ]);
+    const github = plan.groups.find((group) => group.key === "domain:github.com");
+    const lisbon = plan.groups.find((group) => group.key === "topic:lisbon");
+    expect(github?.tabIds).toEqual([1, 2, 3]);
+    expect(lisbon?.tabIds).toEqual([10, 11, 12]);
+  });
+
+  it("does not pull never-group tabs into a topic", () => {
+    const tabs = [
+      tab(1, "https://amazon.de/x", { title: "Lisbon sale" }),
+      tab(2, "https://amazon.de/y", { title: "Lisbon deal" }),
+      tab(3, "https://amazon.de/z", { title: "Lisbon shop" }),
+      tab(10, "https://a.com/x", { title: "Lisbon hotels" }),
+      tab(11, "https://b.com/x", { title: "Lisbon map" }),
+      tab(12, "https://c.com/x", { title: "Lisbon weather" }),
+    ];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({
+        minGroupSize: 3,
+        groupingMode: "topics",
+        rules: [rule("amazon.de", "never-group")],
+      }),
+    );
+
+    expect(plan.groups.map((group) => group.key)).toEqual(["topic:lisbon"]);
+    expect(plan.groups[0]?.tabIds).toEqual([10, 11, 12]);
+    expect(plan.ungrouped).toEqual([1, 2, 3]);
+  });
+
+  it("gives leftover maxGroups slots to topics after site groups", () => {
+    const tabs = [
+      ...tabsOn("github.com", 3, 1),
+      tab(10, "https://a.com/x", { title: "Lisbon hotels" }),
+      tab(11, "https://b.com/x", { title: "Lisbon map" }),
+      tab(12, "https://c.com/x", { title: "Lisbon weather" }),
+      tab(13, "https://d.com/x", { title: "Lisbon flights" }),
+      tab(20, "https://e.com/x", { title: "Bergen hotels" }),
+      tab(21, "https://f.com/x", { title: "Bergen map" }),
+      tab(22, "https://g.com/x", { title: "Bergen weather" }),
+    ];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({ minGroupSize: 3, maxGroups: 2, groupingMode: "topics" }),
+    );
+
+    expect(plan.groups.map((group) => group.key).sort()).toEqual([
+      "domain:github.com",
+      "topic:lisbon",
+    ]);
+    expect(plan.ungrouped).toEqual([20, 21, 22]);
+  });
+});
+
+describe("buildPlan — archive", () => {
+  const now = 30 * MS_PER_DAY;
+  const idle = now - 15 * MS_PER_DAY;
+  const fresh = now - MS_PER_DAY;
+
+  it("does not archive when the toggle is off", () => {
+    const tabs = tabsOn("github.com", 3).map((item) => ({ ...item, lastAccessed: idle }));
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({ archiveEnabled: false, archiveDays: 14 }),
+      [],
+      now,
+    );
+
+    expect(plan.groups[0]?.key).toBe("domain:github.com");
+  });
+
+  it("moves idle tabs into Archive even when they would form a site group", () => {
+    const tabs = [
+      tab(1, "https://github.com/a", { lastAccessed: idle }),
+      tab(2, "https://github.com/b", { lastAccessed: idle }),
+      tab(3, "https://github.com/c", { lastAccessed: idle }),
+    ];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({ archiveEnabled: true, archiveDays: 14, minGroupSize: 3 }),
+      [],
+      now,
+    );
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.key).toBe("archive");
+    expect(plan.groups[0]?.label).toBe("Archive");
+    expect(plan.groups[0]?.tabIds).toEqual([1, 2, 3]);
+    expect(plan.groups[0]?.reason).toBe("3 tabs unused for 14 days");
+  });
+
+  it("leaves recently used tabs for site grouping", () => {
+    const tabs = [
+      tab(1, "https://github.com/a", { lastAccessed: fresh }),
+      tab(2, "https://github.com/b", { lastAccessed: fresh }),
+      tab(3, "https://github.com/c", { lastAccessed: fresh }),
+    ];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({ archiveEnabled: true, archiveDays: 14, minGroupSize: 3 }),
+      [],
+      now,
+    );
+
+    expect(plan.groups[0]?.key).toBe("domain:github.com");
+  });
+
+  it("archives a single idle tab", () => {
+    const plan = buildPlan(
+      WINDOW,
+      [tab(1, "https://news.com/old", { lastAccessed: idle })],
+      config({ archiveEnabled: true, archiveDays: 14, minGroupSize: 3 }),
+      [],
+      now,
+    );
+
+    expect(plan.groups[0]?.key).toBe("archive");
+    expect(plan.groups[0]?.tabIds).toEqual([1]);
+    expect(plan.groups[0]?.reason).toBe("1 tab unused for 14 days");
+  });
+
+  it("does not archive never-group tabs", () => {
+    const tabs = [
+      tab(1, "https://amazon.de/a", { lastAccessed: idle }),
+      tab(2, "https://amazon.de/b", { lastAccessed: idle }),
+      tab(3, "https://amazon.de/c", { lastAccessed: idle }),
+    ];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({
+        archiveEnabled: true,
+        archiveDays: 14,
+        rules: [rule("amazon.de", "never-group")],
+      }),
+      [],
+      now,
+    );
+
+    expect(plan.groups).toEqual([]);
+    expect(plan.ungrouped).toEqual([1, 2, 3]);
+  });
+
+  it("adds idle tabs to an existing Archive group instead of creating another", () => {
+    const plan = buildPlan(
+      WINDOW,
+      [tab(1, "https://news.com/old", { lastAccessed: idle })],
+      config({ archiveEnabled: true, archiveDays: 14 }),
+      [existing(9, ["https://old.com/x"], "Archive", "grey")],
+      now,
+    );
+
+    expect(plan.groups[0]?.key).toBe("archive");
+    expect(plan.groups[0]?.existingGroupId).toBe(9);
+    expect(plan.groups[0]?.color).toBe("grey");
+  });
+
+  it("still detects duplicates before archiving survivors", () => {
+    const tabs = [
+      tab(1, "https://news.com/a", { lastAccessed: idle }),
+      tab(2, "https://news.com/a", { lastAccessed: idle }),
+      tab(3, "https://news.com/b", { lastAccessed: idle }),
+    ];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({ archiveEnabled: true, archiveDays: 14 }),
+      [],
+      now,
+    );
+
+    expect(plan.duplicates[0]?.close).toEqual([2]);
+    expect(plan.groups[0]?.tabIds).toEqual([1, 3]);
+    expect(plan.groups[0]?.tabIds).not.toContain(2);
   });
 });

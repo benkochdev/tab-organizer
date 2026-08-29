@@ -1,5 +1,6 @@
 import { type Browser, browser } from "wxt/browser";
 import type { ExistingGroup, GroupColor, TabInfo } from "@/core/types";
+import { isIdleFixtureUrl } from "./idle-fixture";
 
 /**
  * Reading tabs out of the browser and into plain data. This file decides
@@ -48,6 +49,18 @@ function isPrivileged(url: string): boolean {
 }
 
 /**
+ * Firefox's lastAccessed is read-only. The `npm run dev` fixture tab is
+ * reported as 0 (very long ago) so Archive can be clicked through without
+ * waiting a day. Production builds pass the browser value through.
+ */
+function lastAccessedOf(tab: Browser.tabs.Tab): number {
+  if (import.meta.env.DEV && tab.url !== undefined && isIdleFixtureUrl(tab.url)) {
+    return 0;
+  }
+  return tab.lastAccessed ?? 0;
+}
+
+/**
  * The tabs of a query result the core is allowed to reorganise, as plain data.
  *
  * Excluded, and each for a different reason: pinned tabs (the user placed them
@@ -73,9 +86,8 @@ function toTabInfo(tabs: readonly Browser.tabs.Tab[], windowId: number): TabInfo
       index: tab.index,
       title: tab.title ?? "",
       url: tab.url,
-      // Firefox omits lastAccessed on some tabs. 0 reads as "very long ago",
-      // which is the safe default for a stale-tab stage that does not exist yet.
-      lastAccessed: tab.lastAccessed ?? 0,
+      // Firefox omits lastAccessed on some tabs. 0 reads as "very long ago".
+      lastAccessed: lastAccessedOf(tab),
     });
   }
 

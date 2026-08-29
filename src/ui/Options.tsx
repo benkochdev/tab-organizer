@@ -91,10 +91,7 @@ export function Options({ start }: { start: UiSettings }) {
           />
           <span>
             <span>Topics across sites</span>
-            <span className="hint">Cluster by title across domains.</span>
-            {settings.groupingMode === "topics" && (
-              <span className="hint">Not implemented. Grouping still uses domains.</span>
-            )}
+            <span className="hint">After site groups, cluster leftovers by title.</span>
           </span>
         </label>
       </section>
@@ -200,10 +197,9 @@ export function Options({ start }: { start: UiSettings }) {
           />
           <span>
             <span>Move idle tabs into an Archive group</span>
-            <span className="hint">Archive is a group row in the popup.</span>
-            {settings.archiveEnabled && (
-              <span className="hint">Not implemented. No Archive row in the popup.</span>
-            )}
+            <span className="hint">
+              Archive is a group row in the popup. One idle tab is enough.
+            </span>
           </span>
         </label>
         <label className="inline">

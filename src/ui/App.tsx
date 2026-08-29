@@ -551,8 +551,11 @@ export function App({ start }: { start: Start }) {
       action: rule.action,
       value: rule.value,
     })),
+    groupingMode: settings.groupingMode,
+    archiveEnabled: settings.archiveEnabled,
+    archiveDays: settings.archiveDays,
   };
-  const plan = buildPlan(phase.windowId, phase.tabs, config, phase.existingGroups);
+  const plan = buildPlan(phase.windowId, phase.tabs, config, phase.existingGroups, Date.now());
 
   const byId = new Map(phase.tabs.map((tab) => [tab.id, tab]));
   const selected = plan.groups.filter((group) => !excluded.has(group.key));

@@ -108,6 +108,8 @@ h1 {
   border-radius: 4px;
   color: inherit;
   cursor: pointer;
+  text-decoration: none;
+  box-sizing: border-box;
 }
 
 .gear:hover {

@@ -1,6 +1,8 @@
+import { peelArchive } from "./archive";
 import { joinExistingGroups } from "./join";
 import { applyDomainRules } from "./rules";
 import { compareStrings, splitMixedSite } from "./sites";
+import { clusterByTopic } from "./topics";
 import type {
   Config,
   DuplicateCluster,
@@ -142,13 +144,16 @@ function clusterByDomain(
  * their close-tabs in grouping and do not count toward `wouldClose`. Loose tabs
  * join existing groups before rules and site clustering (D-034); those join
  * proposals do not consume maxGroups. Domain rules then fill maxGroups first
- * (size desc, key asc) and may be smaller than minGroupSize.
+ * (size desc, key asc) and may be smaller than minGroupSize. Topics, when
+ * enabled, cluster only the remainder after site grouping. Archive peels idle
+ * tabs after duplicates and before join (time is `now`, never Date.now()).
  */
 export function buildPlan(
   windowId: number,
   tabs: TabInfo[],
   config: Config,
   existingGroups: readonly ExistingGroup[] = [],
+  now = 0,
 ): GroupPlan {
   const found = config.detectDuplicates ? findDuplicates(tabs) : [];
 
@@ -165,29 +170,47 @@ export function buildPlan(
   );
   const survivors = tabs.filter((tab) => !closing.has(tab.id));
 
-  const { groups: joinGroups, remaining: afterJoin } = joinExistingGroups(
+  const { groups: archiveGroups, remaining: afterArchive } = peelArchive(
     survivors,
+    config,
+    existingGroups,
+    now,
+  );
+
+  const { groups: joinGroups, remaining: afterJoin } = joinExistingGroups(
+    afterArchive,
     existingGroups,
     config,
   );
 
+  const afterArchiveCap = Math.max(0, config.maxGroups - archiveGroups.length);
   const {
     groups: ruleGroups,
     remaining: afterRules,
     neverGrouped,
-  } = applyDomainRules(afterJoin, config);
+  } = applyDomainRules(afterJoin, { ...config, maxGroups: afterArchiveCap });
 
-  const remainingSlots = Math.max(0, config.maxGroups - ruleGroups.length);
+  const remainingSlots = Math.max(0, afterArchiveCap - ruleGroups.length);
   const { groups: domainGroups, remaining: leftover } = clusterByDomain(afterRules, {
     ...config,
     maxGroups: remainingSlots,
   });
 
-  const groups = [...joinGroups, ...ruleGroups, ...domainGroups].sort(
-    (a, b) => b.tabIds.length - a.tabIds.length || compareStrings(a.key, b.key),
-  );
+  const topicSlots = Math.max(0, remainingSlots - domainGroups.length);
+  const { groups: topicGroups, remaining: afterTopics } =
+    config.groupingMode === "topics"
+      ? clusterByTopic(leftover, { ...config, maxGroups: topicSlots })
+      : { groups: [], remaining: leftover };
 
-  const ungrouped = [...neverGrouped, ...leftover].sort(byTabIndex);
+  const groups = [
+    ...archiveGroups,
+    ...joinGroups,
+    ...ruleGroups,
+    ...domainGroups,
+    ...topicGroups,
+  ].sort((a, b) => b.tabIds.length - a.tabIds.length || compareStrings(a.key, b.key));
+
+  const ungrouped = [...neverGrouped, ...afterTopics].sort(byTabIndex);
 
   return {
     windowId,

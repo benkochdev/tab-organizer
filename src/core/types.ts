@@ -100,6 +100,8 @@ export type DomainRule = {
   value: string;
 };
 
+export type GroupingMode = "sites" | "topics";
+
 export type Config = {
   /** Below this, a domain is not a group. Two tabs is not clutter. */
   minGroupSize: number;
@@ -110,6 +112,15 @@ export type Config = {
   spareDuplicateCanonicals: string[];
   /** Host/site overrides applied after duplicates and before domain clustering. */
   rules: DomainRule[];
+  /**
+   * `topics` clusters leftovers by title after site grouping. `sites` (default)
+   * leaves that remainder ungrouped.
+   */
+  groupingMode: GroupingMode;
+  /** When true, idle tabs are proposed as one Archive group. */
+  archiveEnabled: boolean;
+  /** Tabs unused for this many days count as idle. */
+  archiveDays: number;
 };
 
 export const DEFAULT_CONFIG: Config = {
@@ -118,4 +129,7 @@ export const DEFAULT_CONFIG: Config = {
   detectDuplicates: true,
   spareDuplicateCanonicals: [],
   rules: [],
+  groupingMode: "sites",
+  archiveEnabled: false,
+  archiveDays: 14,
 };

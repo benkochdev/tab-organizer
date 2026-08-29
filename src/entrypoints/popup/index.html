@@ -2,65 +2,104 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tab Organizer</title>
     <!--
-      Critical first-paint CSS lives here on purpose. In `npm run dev`, Vite
-      turns a <link> to style.css into a JS injection, so the popup paints as
-      unstyled Times-on-white until the bundle runs (~2s). This block is in the
-      HTML, so the chrome and spinner match the rest of the UI from the first
-      frame. style.css still loads for everything else.
+      Critical first-paint CSS lives here on purpose. `style.css` is imported
+      from main.tsx, not linked: a <link> is render-blocking, and in
+      `npm run dev` that delay is past Firefox's 200ms popup preload, so the
+      first getContentSize is 1×1. This block is the loading screen.
     -->
     <style>
       :root {
-        color-scheme: light dark;
+        color-scheme: light;
         font-family: system-ui, sans-serif;
-        font-size: 14px;
+        font-size: 13px;
+        --bg: #ffffff;
+        --fg: #15141a;
         --accent: #0060df;
-        --border: rgba(0, 0, 0, 0.12);
+        --border: #cfcfd8;
+        --muted: #5b5b66;
+        --hover: #f0f0f4;
       }
       @media (prefers-color-scheme: dark) {
         :root {
+          color-scheme: dark;
+          --bg: #2b2a33;
+          --fg: #fbfbfe;
           --accent: #00ddff;
-          --border: rgba(255, 255, 255, 0.16);
+          --border: #3a3944;
+          --muted: #bfbfc9;
+          --hover: #52525e;
         }
       }
-      html,
+      html {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      /*
+        Firefox getContentSize uses body's used size and ignores min-height.
+        The popup is shown from a preload after at most 200ms. If that first
+        size is under ~30×10, the XUL browser is styled to 1×1 and later
+        resizes are circular with the viewport. A real height on body during
+        boot (the mock loading size) is the floor; it drops when React paints.
+        Width on body, never :root. No viewport meta.
+      */
       body {
         margin: 0;
         width: 380px;
-        min-width: 380px;
-        min-height: 120px;
-        background: Canvas;
-        color: CanvasText;
+        height: 120px;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      body:has(#root:not(:empty)) {
+        height: auto;
       }
       .shell:has(#root:not(:empty)) #boot {
         display: none;
       }
-      .shell {
-        padding: 12px 14px 14px;
-      }
       .head {
         display: flex;
-        align-items: baseline;
+        align-items: flex-start;
         gap: 8px;
-        margin-bottom: 12px;
+        padding: 10px 8px 10px 12px;
+      }
+      .head-text {
+        flex: 1;
       }
       h1 {
-        font-size: 15px;
+        font-size: 13px;
         font-weight: 600;
         margin: 0;
       }
       .tagline {
-        font-size: 12px;
-        opacity: 0.6;
+        font-size: 11px;
+        color: var(--muted);
+        margin: 1px 0 0;
+      }
+      .gear {
+        width: 32px;
+        height: 32px;
+        flex: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        background: transparent;
+        border: none;
+        border-radius: 4px;
+        color: inherit;
+        cursor: pointer;
+      }
+      .gear:hover {
+        background: var(--hover);
       }
       .busy {
         display: flex;
         align-items: center;
         gap: 10px;
         min-height: 48px;
-        opacity: 0.75;
+        padding: 18px 12px 26px;
       }
       .spinner {
         box-sizing: border-box;
@@ -83,17 +122,30 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="./style.css" />
+    <!-- style.css is imported from main.tsx. A <link> here is render-blocking;
+         in `npm run dev` it points at the Vite server and delays DOMContentLoaded
+         past Firefox's 200ms preload timeout, so the first getContentSize is 1×1. -->
   </head>
   <body>
     <div class="shell">
-      <!-- Static chrome, painted before the bundle loads. #boot sits *outside*
-           #root: React's createRoot clears #root before the first commit, and
-           Firefox sizes the popup from that empty frame — a 1×1 window that
-           then never grows. -->
+      <!-- Header and spinner are HTML, not React. React does not mount until
+           there is a real screen to paint, so createRoot never empties the
+           popup down to a 1×1 frame. #boot hides once #root has content.
+           The gear lives here so every state — including loading — can open
+           options. -->
       <header class="head">
-        <h1>Tab Organizer</h1>
-        <span class="tagline">Nothing moves until you apply</span>
+        <div class="head-text">
+          <h1>Tab Organizer</h1>
+          <p class="tagline">No changes until Apply.</p>
+        </div>
+        <button type="button" id="options" class="gear" title="Options" aria-label="Options">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path
+              fill-rule="evenodd"
+              d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872zM8 10.93a2.929 2.929 0 1 1 0-5.858 2.929 2.929 0 0 1 0 5.858z"
+            ></path>
+          </svg>
+        </button>
       </header>
       <div id="boot" class="busy" role="status" aria-live="polite">
         <span class="spinner" aria-hidden="true"></span>

@@ -43,8 +43,7 @@ export default defineConfig({
 
   manifest: {
     name: "Tab Organizer",
-    description:
-      "Groups your open tabs into a few meaningful groups, with a preview you approve first.",
+    description: "Preview tab groups for the current window, then apply.",
 
     // One SVG for every size. Firefox renders SVG extension icons; Chrome does
     // not, which is a trade this Firefox-only extension can make (D-018).

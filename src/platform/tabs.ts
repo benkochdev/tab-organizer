@@ -75,7 +75,7 @@ export async function readCurrentWindow(): Promise<{ windowId: number; tabs: Tab
   const windowId = all[0]?.windowId;
 
   if (windowId === undefined) {
-    throw new Error("No current window — the popup is open without a window to read.");
+    throw new Error("No current window.");
   }
 
   return { windowId, tabs: toTabInfo(all, windowId) };

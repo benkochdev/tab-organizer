@@ -1,7 +1,28 @@
 # Design
 
 Everything about how this thing works: types, pipeline, what to build in what
-order, and the decisions that got us here. One file on purpose.
+order, and the decisions that got us here. One file on purpose. This is the
+product brain. `CLAUDE.md` is how we edit the repo.
+
+## Where things stand (2026-08-28)
+
+**Shipped (daily use, not AMO-listed).** Preview → apply → undo. Site grouping
+by eTLD+1. Known-service labels (`GitHub`). Google splits by product and
+Wikipedia by title token only when two piles each meet `minGroupSize`.
+D-029 popup + options UI: groups first, compact duplicates line, one primary
+button, “Make tab groups” (off = reorder only), gear → options tab. Collapse,
+thresholds, and duplicate detection live on the options page and feed
+`buildPlan` / apply. Undo per window in `storage.session`. Popup: HTML
+loading screen, React starts after `loadPopup()`. Do not pin popup height.
+
+**Next.** Topic clustering, Archive as a group row, custom domain rules, and
+AI (preview stays local; button label already follows the options toggle).
+Settings for those are saved; they do not change the plan yet. Do not change
+`src/core/` until a stage actually needs a new `Config` field.
+
+**Not doing (still true).** Per-tab exclude, duplicate survivor picker, i18n,
+host permission, billing, Chrome, CI, a background script that decides
+anything.
 
 ## The one idea
 
@@ -22,7 +43,7 @@ This is not architecture astronautics. It buys three concrete things:
     src/core/        Pure TypeScript. TabInfo[] + Config -> GroupPlan. All the logic.
     src/platform/    The only place `browser.*` is allowed. Thin adapters.
     src/ui/          React components. Render a GroupPlan, decide nothing.
-    src/entrypoints/ What WXT compiles into the extension. Just the popup (D-010).
+    src/entrypoints/ What WXT compiles into the extension. Popup and options (D-010 still: no background script).
 
 ## Data flow
 
@@ -148,19 +169,49 @@ type Stage = (tabs: TabInfo[], ctx: PlanContext) =>
   { groups: GroupProposal[]; remaining: TabInfo[] };
 ```
 
-**Not in v1**, in rough order of how likely I am to want them: user-defined
-domain rules, title-similarity clustering over the remainder (cross-site topics),
-stale tabs into an "Archive" group, options page. Each is a new `Stage` plus a
-`Config` field. None of them block shipping.
+## Backlog (UI + product)
 
-## Where AI goes (v2, not now)
+Locked in D-029; **popup + options chrome is shipped.** Options is the home for
+almost all of it. Each grouping idea is still a new `Stage` plus a `Config`
+field.
 
-An optional stage that runs **instead of** title clustering, on the same input:
-the remainder after domain clustering. Not after it — that would feed the AI
-whatever the fuzziest heuristic already gave up on, and make the comparison
-meaningless. Same input, same output type, one flag picks which runs. It never
-sees every tab, never runs without an explicit click, and if it is slow or
-unavailable the plan is simply the deterministic one.
+1. ~~**Options page**~~ (gear in popup header) — one scrolling page, headings,
+   no tabs. Collapse-new-groups, min group size, max groups, and duplicate
+   detection are wired. Grouping default / AI / archive / rules are saved
+   only.
+2. ~~**“Make tab groups” toggle**~~ on the popup, default on. Off = same site
+   buckets, only reorder the strip (no Firefox tab-group chrome). Replaced
+   Sort by domain / title.
+3. ~~**Duplicates compact line**~~ — one row under groups; expand for clusters;
+   close-now lives inside that block, not next to the primary button.
+4. **Custom domain rules** — options list: always-name / never-group / merge
+   into. Saved, not applied.
+5. **Cross-site topics** — title-similarity over the remainder after domain
+   clustering. Radio saved in options; sites still run.
+   Wikipedia/Google *in-site* splits already ship (D-027).
+6. **Archive** — stale tabs as a normal proposed group row when enabled.
+   Toggle and days are saved; no Archive row yet.
+7. **AI** — see below. Default **off**. Button label follows the toggle;
+   nothing is sent.
+
+Still not in the product: per-tab exclude (D-007), survivor picker, i18n
+(D-003), host permission in v1 (D-002), billing.
+
+## Where AI goes (not now, shape locked)
+
+An optional stage that runs **instead of** title clustering, on the **same
+input**: the remainder after domain clustering. Same output type. The popup
+preview is **always the local deterministic plan** (instant, no network).
+
+- Toggle in **options**, default off. Greyed out with an explanation when
+  offline. Placeholder for a future API key is fine; no billing UI.
+- Request fires only when the user hits the popup **primary button**
+  (explicit click). Not when the popup opens.
+- If the toggle is on, the primary button must say so (“Group N tabs with
+  AI”). Undo is the safety net. If AI is slow or unavailable, fall back to
+  the deterministic plan.
+- It never sees every tab. Enabling it later is a **visible** new permission
+  / network event (D-002).
 
 ## Build order
 
@@ -250,23 +301,98 @@ sort remaining params by key, `null` for anything that is not http/https.
 - a spared cluster stays in `duplicates` with `spare: true`; its close-tabs
   appear in groups and do not count toward `wouldClose`
 
+## Known bugs
+
+- **1×1 white-dot popup.** Firefox sizes the action popup with
+  `getContentSize` on a preload browser (shown after at most 200ms). It
+  **ignores `min-height`**. If the first size is under ~30×10, it writes
+  width/height onto the XUL browser; later resizes are then circular with a
+  1px viewport. Cause during “Reading tabs…”: boot CSS had no real `height`,
+  and a render-blocking `<link>` to `style.css` delayed DOMContentLoaded past
+  the 200ms timeout. **Fix (D-031):** `body { height: 120px }` (the mock
+  loading size) until `#root` has content, then `height: auto`. Import CSS
+  from `main.tsx`, not a blocking `<link>`. Still no viewport meta, no 240px
+  lock, no `fit.js`. After HTML/JS changes, reload the add-on.
+
+## Next UI (D-029, shipped chrome)
+
+UX over polish. Popup = this window’s plan + one confirm. Options = the rest.
+Native Firefox panel (system-ui, light/dark panel colours). ~380px wide, height
+follows content, max ~600. One scroller for lists; header/gear/actions stay.
+
+**Popup first glance:** groups (checkbox, colour, name, reason,
+expand titles). All/None only if 2+ groups. Quiet leftovers line. Archive,
+when enabled, is just another group row (not yet: no core stage). Gear
+top-right → options.
+
+**Duplicates:** one compact line (“N duplicates, close on apply”);
+expand for clusters; close-now inside that block.
+
+**Primary:** one button (“Group N tabs” / “Reorder N tabs” / “Close N
+duplicates” / “Group N tabs with AI” if the options toggle is on). Cancel.
+Quiet Undo if a snapshot exists. “Make tab groups” toggle near the primary
+action, default on.
+
+**Not on the main popup:** collapse checkbox, sort buttons, equal-weight
+Group/Close/Sort row, grouping-mode segmented control, thresholds.
+
+**Options:** one page, headings in this order — Grouping (sites default /
+topics), AI (off, offline-disabled), New groups (collapse), Thresholds,
+Duplicates, Archive, Rules.
+
+**States to keep:** loading (HTML spinner), working, empty, applied + undo,
+error / Firefox too old.
+
 ## Decisions
 
 Newest first. One line each; a paragraph only when the reasoning is not obvious.
 
+- **D-032 (2026-08-29)** — Popup light/dark uses the mock’s panel tokens
+  (`#ffffff` / `#2b2a33`) and sets `color-scheme` on `:root`, not `Canvas`.
+  In the action popup `Canvas` often stays light, so the panel never flips.
+  Options stays a content tab (`Canvas` + `prefers-color-scheme`) and the
+  720px column is centered. Amends D-029.
+- **D-031 (2026-08-28)** — Firefox ignores `min-height` in popup
+  `getContentSize`; the first used size must be a real `height`. Boot the
+  body at 120px (loading mock), drop to `auto` when React paints. Do not
+  `<link>` `style.css` from the popup HTML — that blocks DOMContentLoaded
+  past the 200ms preload timeout. Amends D-028 (still no 240px lock) and
+  D-030 (`min-width: 0` was not the loading-phase cause).
+- **D-030 (2026-08-28)** — First paint must not be shrink-to-fit collapsible.
+  D-029’s header `min-width: 0` let Firefox’s first `getContentSize` come back
+  ~1×1 while `#boot` was still showing, and the panel never grew. Keep
+  `min-width: 380px` on `body` and `.shell`, `min-height: 48px` on `#boot`; do
+  not pin popup height. Amends D-028 (still no height pin, still no viewport)
+  and D-029.
+- **D-029 (2026-08-28)** — Popup redesign. UX > decoration. Groups are the
+  first glance; one primary apply. Duplicates are a compact expandable line.
+  Drop Sort by domain/title; replace with “Make tab groups” (default on; off
+  = reorder only). Settings and mode live on an options page opened from a
+  header gear. AI is an options toggle, default off, request on Apply,
+  preview stays local (no network in this build). Archive is a normal group
+  row when the stage exists. Native Firefox chrome. Amends D-020 (duplicates
+  still per-cluster in the data, quieter in the UI), D-022 (collapse moved
+  to options), D-027 (sort left the popup).
+- **D-028 (2026-08-27)** — The HTML file *is* the loading screen. React does
+  not mount until tabs are read (`loadPopup` then `createRoot`); the first
+  commit is already the preview (never `null`). `#boot` sits outside `#root`
+  and hides when React paints. Popup height tracks content; **do not pin
+  it.** Width stays on `body`, not `:root`. No viewport meta. Amends D-026.
 - **D-027 (2026-08-27)** — Site grouping stays the default. Known services get
   real names (`GitHub`). Google splits by product (Gmail/Docs/…) and Wikipedia
   by title tokens, but only when two piles each meet `minGroupSize`. A dedicated
   control closes checked duplicates without grouping. Sort-by-domain / title
-  reorders loose tabs only; it is not part of undo.
+  reorders loose tabs only and is not undoable — **shipped; D-029 removes them
+  from the next UI** in favour of a “Make tab groups” toggle.
 - **D-026 (2026-08-26)** — First paint of the popup is a styled shell plus
   spinner, from inline CSS in `index.html`. Vite injects `style.css` via JS in
   dev, so a `<link>` alone is Times-on-white until the bundle runs. The spinner
   lives outside `#root` (`#boot`): `createRoot` clears `#root` before the first
   commit, and Firefox will size that empty frame as a 1×1 popup that never
-  grows. `html`/`body` also pin `min-width`/`min-height`.
-- **D-025 (2026-08-26)** — One scroller for groups, duplicates, and ungrouped.
-  Undo bar, summary, collapse checkbox, and actions stay put.
+  grows. See D-028: React now waits until there is something to paint.
+- **D-025 (2026-08-26)** — One scroller for groups, leftovers, and duplicates.
+  Header, “Make tab groups”, actions, and Undo stay put. Amends itself after
+  D-029: the collapse checkbox left the popup.
 - **D-024 (2026-08-26)** — Ungrouped tabs are an expandable list, collapsed by
   default. Titles only — still no per-tab exclude (D-007).
 - **D-023 (2026-08-26)** — Partial apply names the groups that failed, not just

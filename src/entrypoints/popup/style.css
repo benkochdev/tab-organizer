@@ -1,78 +1,121 @@
 /*
   The first paint of the popup is styled by the <style> block in index.html,
-  not this file. In `npm run dev` Vite turns this <link> into a JS injection,
-  so it arrives with the bundle (~2s). Keep the chrome + spinner rules here in
-  sync with that block, or the loading state jumps when React takes over.
+  not this file. This file is imported from main.tsx so it is not a
+  render-blocking <link> (that delay is what made Firefox's first
+  getContentSize 1×1 in dev). Keep the chrome + spinner rules here in sync
+  with the HTML block, or the loading state jumps when React takes over.
+
+  Light/dark uses the mock’s panel tokens, not Canvas: Firefox’s action
+  popup often keeps Canvas light, so the panel never flips (D-032).
 */
 
 :root {
-  /* Tells Firefox to paint the popup chrome in the user's theme immediately,
-     instead of defaulting to white and correcting later. */
-  color-scheme: light dark;
+  color-scheme: light;
   font-family: system-ui, sans-serif;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.35;
 
+  --bg: #ffffff;
+  --fg: #15141a;
   --accent: #0060df;
+  --accent-hover: #0250bb;
   --accent-fg: #ffffff;
-  --border: rgba(0, 0, 0, 0.12);
-  --hover: rgba(0, 0, 0, 0.05);
+  --muted: #5b5b66;
+  --border: #cfcfd8;
+  --hairline: #f0f0f4;
+  --hover: #f0f0f4;
+  --btn: #f0f0f4;
+  --btn-hover: #e0e0e6;
   --danger: #b3261e;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
+    --bg: #2b2a33;
+    --fg: #fbfbfe;
     --accent: #00ddff;
-    --accent-fg: #001018;
-    --border: rgba(255, 255, 255, 0.16);
-    --hover: rgba(255, 255, 255, 0.08);
+    --accent-hover: #80ebff;
+    --accent-fg: #15141a;
+    --muted: #bfbfc9;
+    --border: #3a3944;
+    --hairline: #3a3944;
+    --hover: #52525e;
+    --btn: #52525e;
+    --btn-hover: #5b5b66;
     --danger: #ff9aa2;
   }
 }
 
-html,
+html {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* Width on body, never html/:root. A real height (not min-height) is the
+   loading floor — Firefox ignores min-height in getContentSize. Drop it
+   once React has painted so the preview can grow. */
 body {
   margin: 0;
-  /* Firefox sizes the popup from the first layout. An empty #root during
-     createRoot is a 1×1 window that does not grow — pin both axes. */
   width: 380px;
-  min-width: 380px;
-  min-height: 120px;
-  background: Canvas;
-  color: CanvasText;
+  height: 120px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body:has(#root:not(:empty)) {
+  height: auto;
 }
 
 .shell:has(#root:not(:empty)) #boot {
   display: none;
 }
 
-.shell {
-  padding: 12px 14px 14px;
-}
-
 .head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 8px;
-  margin-bottom: 12px;
+  padding: 10px 8px 10px 12px;
+}
+
+.head-text {
+  flex: 1;
 }
 
 h1 {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   margin: 0;
 }
 
 .tagline {
-  font-size: 12px;
-  opacity: 0.6;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 1px 0 0;
+}
+
+.gear {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.gear:hover {
+  background: var(--hover);
 }
 
 p {
   margin: 0;
-}
-
-.muted {
-  opacity: 0.65;
 }
 
 .busy {
@@ -80,7 +123,7 @@ p {
   align-items: center;
   gap: 10px;
   min-height: 48px;
-  opacity: 0.75;
+  padding: 18px 12px 26px;
 }
 
 .spinner {
@@ -106,55 +149,62 @@ p {
   }
 }
 
-.small {
-  font-size: 12px;
+.message {
+  padding: 6px 12px 14px;
+}
+
+.hint {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.message .hint {
+  margin-top: 4px;
 }
 
 .error {
   color: var(--danger);
 }
 
-.done {
-  font-weight: 600;
-  margin-bottom: 4px;
+/* Header, toggle, actions stay put. The plan is the only thing that scrolls. */
+.plan-body {
+  max-height: 392px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
-/* ---- undo bar ---------------------------------------------------------- */
-
-.undo-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 8px;
-  margin-bottom: 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-/* ---- summary ----------------------------------------------------------- */
-
-.summary {
+.plan-head {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: 8px;
-  margin-bottom: 6px;
+  padding: 9px 12px 3px;
+}
+
+.plan-head-label {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
 }
 
 .pick {
   display: flex;
+  align-items: baseline;
   gap: 4px;
-  font-size: 12px;
-}
-
-/* ---- group list -------------------------------------------------------- */
-
-/* Undo bar, summary, collapse checkbox and actions stay put. The plan — groups,
-   duplicates, ungrouped — is the only thing that scrolls. */
-.plan-body {
-  max-height: 300px;
-  overflow-y: auto;
+  font-size: 11.5px;
+  color: var(--muted);
 }
 
 .plan-list {
@@ -163,34 +213,36 @@ p {
   padding: 0;
 }
 
-.group {
-  border-radius: 6px;
+.row {
+  border-bottom: 1px solid var(--hairline);
 }
 
-.group:hover {
+.row:last-child {
+  border-bottom: none;
+}
+
+.row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 6px 0 12px;
+}
+
+.row-head:hover {
   background: var(--hover);
 }
 
-.group-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.row-head.quiet {
+  min-height: 36px;
 }
 
-.group-main {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-  padding: 6px 2px 6px 6px;
-  cursor: pointer;
-}
-
-.group-main input {
+.row-head input {
+  width: 16px;
+  height: 16px;
   margin: 0;
   flex: none;
-  transform: translateY(1px);
+  accent-color: var(--accent);
 }
 
 .dot {
@@ -198,184 +250,229 @@ p {
   height: 9px;
   border-radius: 50%;
   flex: none;
-  transform: translateY(1px);
 }
 
-.group-label {
-  font-weight: 600;
+.row-copy {
+  flex: 1;
   min-width: 0;
-  max-width: 60%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: 6px 0;
 }
 
-.group-reason {
+.row-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-reason,
+.row-quiet {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
-  /* One line, ellipsised: a long domain must not push the chevron off the row. */
+  color: var(--muted);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-/* Unchecked groups stay legible but visibly out of the plan. Placed after the
-   two rules it overrides, so the cascade does not depend on specificity. */
-.group-off .group-label,
-.group-off .group-reason {
-  opacity: 0.45;
+.row-reason {
+  font-size: 11.5px;
 }
 
 .chevron {
+  width: 32px;
+  height: 32px;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: none;
+  padding: 0;
   border: none;
-  background: none;
-  color: inherit;
-  opacity: 0.55;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
   cursor: pointer;
-  padding: 4px 6px;
+}
+
+.chevron.small {
+  width: 28px;
+  height: 28px;
 }
 
 .chevron:hover {
-  opacity: 1;
+  background: var(--btn-hover);
+  color: inherit;
 }
 
 .chevron-icon {
   display: block;
-  width: 12px;
-  height: 12px;
-}
-
-.chevron-icon.is-open {
-  transform: rotate(180deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chevron-icon {
-    transform: none;
-  }
-
-  .chevron-icon.is-open {
-    transform: rotate(180deg);
-  }
 }
 
 .tab-list {
   list-style: none;
-  margin: 0 0 6px;
-  padding: 0 8px 0 34px;
-  font-size: 12px;
-  opacity: 0.7;
+  margin: 0;
+  padding: 2px 12px 8px 45px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tab-list.inset {
+  padding-left: 12px;
 }
 
 .tab-list li {
-  padding: 2px 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-/* ---- sections inside the scroller ------------------------------------- */
-
-.section {
-  margin-top: 10px;
+.clusters {
+  padding: 0 12px 10px;
 }
 
-.section:first-child {
-  margin-top: 0;
+.cluster {
+  border-top: 1px solid var(--hairline);
 }
 
-.section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 0 6px;
-}
-
-.section-note {
-  padding: 2px 6px 6px;
-}
-
-.ungrouped-label {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 2px 6px 6px;
-}
-
-/* ---- collapse preference ---------------------------------------------- */
-
-.setting {
+.cluster-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 12px;
-  cursor: pointer;
+  min-height: 34px;
 }
 
-.setting input {
+.cluster-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.cluster-title {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cluster-count {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dups-now {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 4px;
+}
+
+.dups-now .skip {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.foot {
+  padding: 8px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin: 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.toggle input {
+  width: 16px;
+  height: 16px;
   margin: 0;
   flex: none;
+  accent-color: var(--accent);
 }
-
-.tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-top: 12px;
-}
-
-/* ---- actions ----------------------------------------------------------- */
 
 .actions {
   display: flex;
+  align-items: center;
   gap: 8px;
-  margin-top: 14px;
+}
+
+.actions.bar {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--border);
 }
 
 button {
   font: inherit;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
+  padding: 0 14px;
+  min-height: 32px;
+  border: none;
+  border-radius: 4px;
+  background: var(--btn);
   color: inherit;
   cursor: pointer;
 }
 
 button:hover:not(:disabled) {
-  background: var(--hover);
+  background: var(--btn-hover);
 }
 
 .primary {
+  flex: 1;
   background: var(--accent);
-  border-color: transparent;
   color: var(--accent-fg);
   font-weight: 600;
 }
 
 .primary:hover:not(:disabled) {
-  /* The accent is a variable, so darken by overlay rather than by a second hex. */
-  filter: brightness(1.08);
-  background: var(--accent);
+  background: var(--accent-hover);
+}
+
+.primary.grow {
+  flex: 1;
 }
 
 button:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: default;
 }
 
-/* A button that reads as a link: used where the action is secondary to the text
-   next to it, and a real button would shout. */
 .link {
-  border: none;
-  padding: 2px 4px;
+  min-height: 24px;
+  padding: 0 4px;
+  background: none;
   color: var(--accent);
-  font-size: 12px;
+  font-size: 11.5px;
+}
+
+.link:hover:not(:disabled) {
+  background: none;
+  text-decoration: underline;
+}
+
+.link.quiet {
+  min-height: 26px;
+  padding: 0 2px;
+  color: var(--muted);
+  text-decoration: underline;
+}
+
+.link.quiet:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.spacer {
+  flex: 1;
 }
 
 :focus-visible {

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- WXT reads this into options_ui.open_in_tab. The 720px page would clip
+         inside Firefox's inline options sheet. -->
+    <meta name="manifest.open_in_tab" content="true" />
+    <title>Tab Organizer</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, sans-serif;
+        font-size: 13px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+        }
+      }
+      html,
+      body {
+        margin: 0;
+        background: Canvas;
+        color: CanvasText;
+      }
+    </style>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

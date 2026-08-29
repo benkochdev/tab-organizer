@@ -51,9 +51,9 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
 };
 
 export const RULE_ACTIONS: { value: DomainRuleAction; label: string }[] = [
-  { value: "always-name", label: "Always name as…" },
-  { value: "never-group", label: "Never group" },
-  { value: "merge-into", label: "Merge into…" },
+  { value: "always-name", label: "Name group" },
+  { value: "never-group", label: "Do not group" },
+  { value: "merge-into", label: "Merge into" },
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {

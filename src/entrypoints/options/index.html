@@ -8,9 +8,14 @@
     <title>Tab Organizer</title>
     <style>
       :root {
-        color-scheme: light dark;
+        color-scheme: light;
         font-family: system-ui, sans-serif;
         font-size: 13px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+        }
       }
       html,
       body {

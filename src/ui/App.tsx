@@ -297,7 +297,7 @@ function DuplicateClusterRow({
   onExpand: () => void;
 }) {
   const label = keep === undefined ? cluster.canonicalUrl : tabLabel(keep);
-  const reason = `close ${plural(cluster.close.length, "copy", "copies")}`;
+  const reason = `${plural(cluster.close.length, "copy", "copies")} to close`;
 
   return (
     <div className="cluster">
@@ -320,12 +320,12 @@ function DuplicateClusterRow({
         <ul className="tab-list inset">
           {keep !== undefined && (
             <li key={keep.id} title={keep.url}>
-              Keep — {tabLabel(keep)}
+              Keep {tabLabel(keep)}
             </li>
           )}
           {close.map((tab) => (
             <li key={tab.id} title={tab.url}>
-              Close — {tabLabel(tab)}
+              Close {tabLabel(tab)}
             </li>
           ))}
         </ul>
@@ -437,7 +437,7 @@ export function App({ start }: { start: Start }) {
   }
 
   async function handleUndo(snapshot: Snapshot): Promise<void> {
-    setPhase({ status: "working", label: "Putting it back…" });
+    setPhase({ status: "working", label: "Undoing…" });
 
     try {
       await restore(snapshot);
@@ -477,7 +477,7 @@ export function App({ start }: { start: Start }) {
       <>
         <div className="message">
           <p>Tab groups need Firefox 139 or later.</p>
-          <p className="hint">Turn off “Make tab groups” to reorder tabs instead.</p>
+          <p className="hint">Disable Make tab groups to sort tabs without grouping.</p>
         </div>
         <Actions
           undoable={undoable}
@@ -494,7 +494,7 @@ export function App({ start }: { start: Start }) {
     return (
       <>
         <div className="message">
-          <p>Something went wrong: {phase.message}</p>
+          <p>Error: {phase.message}</p>
         </div>
         <Actions
           undoable={undoable}
@@ -513,9 +513,7 @@ export function App({ start }: { start: Start }) {
         <div className="message">
           <p>{appliedSummary(phase)}</p>
           {phase.failedLabels.length > 0 && (
-            <p className="hint">
-              {phase.failedLabels.join(", ")} could not be grouped — those tabs were left alone.
-            </p>
+            <p className="hint">{phase.failedLabels.join(", ")} were not grouped.</p>
           )}
         </div>
         <Actions
@@ -567,11 +565,11 @@ export function App({ start }: { start: Start }) {
     return (
       <>
         <div className="message">
-          <p>Nothing worth grouping here.</p>
+          <p>No groups in this window.</p>
           <p className="hint">
             {phase.tabs.length === 0
-              ? "No loose tabs in this window."
-              : `${plural(phase.tabs.length, "tab", "tabs")}, no site has ${settings.minGroupSize} or more.`}
+              ? "No ungrouped tabs in this window."
+              : `${plural(phase.tabs.length, "tab", "tabs")}. No domain has ${settings.minGroupSize} or more.`}
           </p>
         </div>
         <div className="actions bar">
@@ -595,7 +593,7 @@ export function App({ start }: { start: Start }) {
         {hasGroups && (
           <>
             <div className="plan-head">
-              <span className="plan-head-label">Proposed groups</span>
+              <span className="plan-head-label">Groups</span>
               {plan.groups.length > 1 && (
                 <span className="pick">
                   <button type="button" className="link" onClick={() => setExcluded(new Set())}>
@@ -632,7 +630,7 @@ export function App({ start }: { start: Start }) {
           <div className="row">
             <div className="row-head quiet">
               <div className="row-quiet">
-                {plural(plan.ungrouped.length, "tab stays", "tabs stay")} where they are
+                {plural(plan.ungrouped.length, "ungrouped tab", "ungrouped tabs")}
               </div>
               <button
                 type="button"
@@ -678,8 +676,8 @@ export function App({ start }: { start: Start }) {
                       : plan.duplicates.reduce((total, cluster) => total + cluster.close.length, 0),
                     "duplicate",
                     "duplicates",
-                  )}{" "}
-                  — {dupsOn ? "will close on apply" : "will stay"}
+                  )}
+                  {dupsOn ? ", close on apply" : ", keep"}
                 </div>
               </label>
               <button
@@ -713,7 +711,7 @@ export function App({ start }: { start: Start }) {
                     >
                       Close {plural(closing, "duplicate", "duplicates")} now
                     </button>
-                    <span className="skip">skips grouping</span>
+                    <span className="skip">does not group</span>
                   </div>
                 )}
               </div>
@@ -729,9 +727,7 @@ export function App({ start }: { start: Start }) {
             checked={grouping}
             onChange={(event) => void persist({ makeTabGroups: event.target.checked })}
           />
-          <span>
-            {grouping ? "Make tab groups" : "Make tab groups — off, tabs are only reordered"}
-          </span>
+          <span>{grouping ? "Make tab groups" : "Make tab groups off. Sort only."}</span>
         </label>
         <div className="actions">
           <button type="submit" className="primary grow" disabled={nothingToDo}>

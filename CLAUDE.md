@@ -70,7 +70,9 @@ so every import is written out.
   `getContentSize`); it becomes `height: auto` once `#root` has content.
   Loading CSS is inline in `index.html`; `style.css` is imported from
   `main.tsx`, never a blocking `<link>`. React mounts only after `loadPopup()`.
-  Width on `body`, not `:root`. No `viewport width=device-width`. See D-031
+  Width on `body`, not `:root`. No `viewport width=device-width`. Popup
+  light/dark is explicit panel colours plus `color-scheme` on `:root` —
+  `Canvas` in the action popup often stays light (D-032). See D-031
   and **Known bugs** in DESIGN.md. Reload the add-on after HTML changes
   (`npm run dev` restart, or about:debugging → Reload). A signed `.xpi` will
   not pick up the working tree until you zip and reinstall.

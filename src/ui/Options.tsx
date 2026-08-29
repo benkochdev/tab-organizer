@@ -11,7 +11,7 @@ import {
 function rulePlaceholder(action: DomainRuleAction): string {
   if (action === "always-name") return "Group name";
   if (action === "merge-into") return "Existing group";
-  return "—";
+  return "";
 }
 
 function toRuleAction(value: string): DomainRuleAction {
@@ -64,7 +64,7 @@ export function Options({ start }: { start: UiSettings }) {
       <header className="hero">
         <h1>Tab Organizer</h1>
         <p className="lede">
-          Settings apply to the next plan you open. Nothing moves until you apply.
+          Takes effect the next time you open the popup. Tabs do not move until Apply.
         </p>
       </header>
 
@@ -79,9 +79,7 @@ export function Options({ start }: { start: UiSettings }) {
           />
           <span>
             <span>Sites</span>
-            <span className="hint">
-              Tabs from the same domain go together. Local, instant, predictable.
-            </span>
+            <span className="hint">One group per registrable domain. Computed locally.</span>
           </span>
         </label>
         <label className="choice">
@@ -93,11 +91,9 @@ export function Options({ start }: { start: UiSettings }) {
           />
           <span>
             <span>Topics across sites</span>
-            <span className="hint">
-              Uses tab titles to group related tabs from different domains.
-            </span>
+            <span className="hint">Cluster by title across domains.</span>
             {settings.groupingMode === "topics" && (
-              <span className="hint">Not in this build yet — the popup still groups by site.</span>
+              <span className="hint">Not implemented. Grouping still uses domains.</span>
             )}
           </span>
         </label>
@@ -115,19 +111,17 @@ export function Options({ start }: { start: UiSettings }) {
           <span>
             <span>Use AI to name and merge groups</span>
             <span className="hint">
-              Runs only when you click the popup’s primary button, not when the popup opens. The
-              preview you see stays the local plan. Tab titles and URLs are sent when it runs.
+              Runs on Apply, not when the popup opens. The preview is the local plan. Titles and
+              URLs are sent with the request.
             </span>
           </span>
         </label>
         {!online && (
-          <p className="callout">
-            Unavailable while offline. The popup falls back to site grouping.
-          </p>
+          <p className="callout">Unavailable while offline. Grouping still uses domains.</p>
         )}
         <label className="inline">
           <span className="hint">API key</span>
-          <input type="text" placeholder="Not required yet" disabled />
+          <input type="text" placeholder="Unused" disabled />
         </label>
       </section>
 
@@ -141,7 +135,7 @@ export function Options({ start }: { start: UiSettings }) {
           />
           <span>
             <span>Collapse new groups</span>
-            <span className="hint">New groups appear closed in the tab strip.</span>
+            <span className="hint">New groups start collapsed.</span>
           </span>
         </label>
       </section>
@@ -160,7 +154,7 @@ export function Options({ start }: { start: UiSettings }) {
               if (n !== null) void patch({ minGroupSize: n });
             }}
           />
-          <span className="hint">Fewer tabs than this stay where they are.</span>
+          <span className="hint">Domains below this size are not grouped.</span>
         </label>
         <label className="field">
           <span className="field-label">Max groups</span>
@@ -174,7 +168,7 @@ export function Options({ start }: { start: UiSettings }) {
               if (n !== null) void patch({ maxGroups: n });
             }}
           />
-          <span className="hint">Per apply.</span>
+          <span className="hint">Maximum groups created in one apply.</span>
         </label>
       </section>
 
@@ -189,8 +183,8 @@ export function Options({ start }: { start: UiSettings }) {
           <span>
             <span>Detect duplicates</span>
             <span className="hint">
-              Shown as one line in the popup. Closed tabs lose their scroll position and back
-              history — Undo reopens the page, not the history.
+              Listed in the popup. Closing a tab drops scroll position and session history. Undo
+              opens a new tab at the same URL.
             </span>
           </span>
         </label>
@@ -205,18 +199,14 @@ export function Options({ start }: { start: UiSettings }) {
             onChange={(event) => void patch({ archiveEnabled: event.target.checked })}
           />
           <span>
-            <span>Collect old tabs into an Archive group</span>
-            <span className="hint">
-              Archive appears in the popup as a normal group row you can uncheck.
-            </span>
+            <span>Move idle tabs into an Archive group</span>
+            <span className="hint">Archive is a group row in the popup.</span>
             {settings.archiveEnabled && (
-              <span className="hint">
-                Not in this build yet — the popup will not show an Archive row.
-              </span>
+              <span className="hint">Not implemented. No Archive row in the popup.</span>
             )}
           </span>
         </label>
-        <label className="inline indent">
+        <label className="inline">
           <span>Unused for</span>
           <input
             type="number"
@@ -235,9 +225,9 @@ export function Options({ start }: { start: UiSettings }) {
 
       <section className="block last">
         <h2>Rules</h2>
-        <p className="hint intro">Rules win over Sites and AI.</p>
+        <p className="hint intro">Rules override domain grouping and AI.</p>
         {settings.rules.length === 0 ? (
-          <p className="hint">No extra rules. Sites are grouped by domain.</p>
+          <p className="hint">No rules. Grouping uses domains.</p>
         ) : (
           <div className="rules">
             <div className="rules-head">
@@ -293,7 +283,7 @@ export function Options({ start }: { start: UiSettings }) {
           </div>
         )}
         {settings.rules.length > 0 && (
-          <p className="hint">Saved, but not applied yet — grouping still uses sites only.</p>
+          <p className="hint">Saved. Not used yet. Grouping still uses domains.</p>
         )}
         <button
           type="button"

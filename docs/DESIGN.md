@@ -317,15 +317,15 @@ sort remaining params by key, `null` for anything that is not http/https.
 ## Next UI (D-029, shipped chrome)
 
 UX over polish. Popup = this window’s plan + one confirm. Options = the rest.
-Native Firefox panel (Canvas, system-ui, light/dark). ~380px wide, height
+Native Firefox panel (system-ui, light/dark panel colours). ~380px wide, height
 follows content, max ~600. One scroller for lists; header/gear/actions stay.
 
-**Popup first glance:** proposed groups (checkbox, colour, name, reason,
+**Popup first glance:** groups (checkbox, colour, name, reason,
 expand titles). All/None only if 2+ groups. Quiet leftovers line. Archive,
 when enabled, is just another group row (not yet: no core stage). Gear
 top-right → options.
 
-**Duplicates:** one compact line (“N duplicates — will close on apply”);
+**Duplicates:** one compact line (“N duplicates, close on apply”);
 expand for clusters; close-now inside that block.
 
 **Primary:** one button (“Group N tabs” / “Reorder N tabs” / “Close N
@@ -347,6 +347,11 @@ error / Firefox too old.
 
 Newest first. One line each; a paragraph only when the reasoning is not obvious.
 
+- **D-032 (2026-08-29)** — Popup light/dark uses the mock’s panel tokens
+  (`#ffffff` / `#2b2a33`) and sets `color-scheme` on `:root`, not `Canvas`.
+  In the action popup `Canvas` often stays light, so the panel never flips.
+  Options stays a content tab (`Canvas` + `prefers-color-scheme`) and the
+  720px column is centered. Amends D-029.
 - **D-031 (2026-08-28)** — Firefox ignores `min-height` in popup
   `getContentSize`; the first used size must be a real `height`. Boot the
   body at 120px (loading mock), drop to `auto` when React paints. Do not

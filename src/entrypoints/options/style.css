@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   font-family: system-ui, sans-serif;
   font-size: 13px;
   line-height: 1.4;
@@ -17,6 +17,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
     --accent: #00ddff;
     --accent-hover: #80ebff;
     --border: #3a3944;
@@ -38,7 +39,9 @@ body {
 
 .page {
   box-sizing: border-box;
+  width: 100%;
   max-width: 720px;
+  margin: 0 auto;
   padding: 0 0 26px;
 }
 
@@ -123,23 +126,18 @@ p {
   color: var(--muted);
 }
 
-.inline,
-.field {
+.inline {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 10px 0 0;
-}
-
-.inline {
-  margin-left: 24px;
-}
-
-.inline.indent {
-  margin-left: 24px;
+  margin: 10px 0 0 24px;
 }
 
 .field {
+  display: grid;
+  grid-template-columns: 10em 4.5em minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
   margin: 0 0 10px;
 }
 
@@ -148,8 +146,11 @@ p {
 }
 
 .field-label {
-  width: 130px;
-  flex: none;
+  min-width: 0;
+}
+
+.field input[type="number"] {
+  width: 100%;
 }
 
 input[type="number"],

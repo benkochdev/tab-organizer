@@ -4,14 +4,19 @@
   render-blocking <link> (that delay is what made Firefox's first
   getContentSize 1×1 in dev). Keep the chrome + spinner rules here in sync
   with the HTML block, or the loading state jumps when React takes over.
+
+  Light/dark uses the mock’s panel tokens, not Canvas: Firefox’s action
+  popup often keeps Canvas light, so the panel never flips (D-032).
 */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   font-family: system-ui, sans-serif;
   font-size: 13px;
   line-height: 1.35;
 
+  --bg: #ffffff;
+  --fg: #15141a;
   --accent: #0060df;
   --accent-hover: #0250bb;
   --accent-fg: #ffffff;
@@ -26,6 +31,9 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
+    --bg: #2b2a33;
+    --fg: #fbfbfe;
     --accent: #00ddff;
     --accent-hover: #80ebff;
     --accent-fg: #15141a;
@@ -41,8 +49,8 @@
 
 html {
   margin: 0;
-  background: Canvas;
-  color: CanvasText;
+  background: var(--bg);
+  color: var(--fg);
 }
 
 /* Width on body, never html/:root. A real height (not min-height) is the
@@ -52,8 +60,8 @@ body {
   margin: 0;
   width: 380px;
   height: 120px;
-  background: Canvas;
-  color: CanvasText;
+  background: var(--bg);
+  color: var(--fg);
 }
 
 body:has(#root:not(:empty)) {

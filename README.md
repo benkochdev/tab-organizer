@@ -77,7 +77,7 @@ The unit tests cover the logic; these are the things only a human can see.
 - [ ] “Make tab groups” off reorders by the preview buckets without creating groups
 - [ ] Duplicates are one compact line; Close now is inside the expanded block
 - [ ] Unchecking the duplicates line grows the groups it was taking tabs out of
-- [ ] Expanding "stays where they are" lists the leftover tabs
+- [ ] Expanding ungrouped tabs lists the leftover tabs
 - [ ] Mixed Google products (e.g. 3 Gmail + 3 Docs) show as separate groups
 - [ ] Mixed Wikipedia topics split; a pile of one topic stays “Wikipedia”
 - [ ] GitHub group is labelled GitHub, not Github

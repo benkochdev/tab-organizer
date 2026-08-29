@@ -1,5 +1,14 @@
+import { joinExistingGroups } from "./join";
+import { applyDomainRules } from "./rules";
 import { compareStrings, splitMixedSite } from "./sites";
-import type { Config, DuplicateCluster, GroupPlan, GroupProposal, TabInfo } from "./types";
+import type {
+  Config,
+  DuplicateCluster,
+  ExistingGroup,
+  GroupPlan,
+  GroupProposal,
+  TabInfo,
+} from "./types";
 import { canonicalUrl, registrableDomain } from "./url";
 
 /**
@@ -130,9 +139,17 @@ function clusterByDomain(
  * Guarantees: pure, total, and stable — equivalent input always yields
  * byte-identical output. Never mutates `tabs`. Proposes, never performs.
  * Duplicate clusters are always listed when detected; `spare` clusters keep
- * their close-tabs in grouping and do not count toward `wouldClose`.
+ * their close-tabs in grouping and do not count toward `wouldClose`. Loose tabs
+ * join existing groups before rules and site clustering (D-034); those join
+ * proposals do not consume maxGroups. Domain rules then fill maxGroups first
+ * (size desc, key asc) and may be smaller than minGroupSize.
  */
-export function buildPlan(windowId: number, tabs: TabInfo[], config: Config): GroupPlan {
+export function buildPlan(
+  windowId: number,
+  tabs: TabInfo[],
+  config: Config,
+  existingGroups: readonly ExistingGroup[] = [],
+): GroupPlan {
   const found = config.detectDuplicates ? findDuplicates(tabs) : [];
 
   const spare = new Set(config.spareDuplicateCanonicals);
@@ -148,7 +165,29 @@ export function buildPlan(windowId: number, tabs: TabInfo[], config: Config): Gr
   );
   const survivors = tabs.filter((tab) => !closing.has(tab.id));
 
-  const { groups, remaining: ungrouped } = clusterByDomain(survivors, config);
+  const { groups: joinGroups, remaining: afterJoin } = joinExistingGroups(
+    survivors,
+    existingGroups,
+    config,
+  );
+
+  const {
+    groups: ruleGroups,
+    remaining: afterRules,
+    neverGrouped,
+  } = applyDomainRules(afterJoin, config);
+
+  const remainingSlots = Math.max(0, config.maxGroups - ruleGroups.length);
+  const { groups: domainGroups, remaining: leftover } = clusterByDomain(afterRules, {
+    ...config,
+    maxGroups: remainingSlots,
+  });
+
+  const groups = [...joinGroups, ...ruleGroups, ...domainGroups].sort(
+    (a, b) => b.tabIds.length - a.tabIds.length || compareStrings(a.key, b.key),
+  );
+
+  const ungrouped = [...neverGrouped, ...leftover].sort(byTabIndex);
 
   return {
     windowId,

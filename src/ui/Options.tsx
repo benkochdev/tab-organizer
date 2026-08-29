@@ -231,7 +231,7 @@ export function Options({ start }: { start: UiSettings }) {
         ) : (
           <div className="rules">
             <div className="rules-head">
-              <span>Domain or pattern</span>
+              <span>Host or site</span>
               <span>Action</span>
               <span>Value</span>
               <span />
@@ -281,9 +281,6 @@ export function Options({ start }: { start: UiSettings }) {
               </div>
             ))}
           </div>
-        )}
-        {settings.rules.length > 0 && (
-          <p className="hint">Saved. Not used yet. Grouping still uses domains.</p>
         )}
         <button
           type="button"

@@ -59,6 +59,17 @@ function normaliseHost(hostname: string): string {
   return hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
 }
 
+/**
+ * Only an exact leading `www.` when the rest still contains a dot. `www.com`
+ * stays whole; `www2.` is an ordinary subdomain.
+ */
+function stripLeadingWww(host: string): string {
+  if (host.startsWith("www.") && host.slice(4).includes(".")) {
+    return host.slice(4);
+  }
+  return host;
+}
+
 function isTrackingParam(key: string): boolean {
   return TRACKING_PARAMS.has(key) || TRACKING_PREFIXES.some((prefix) => key.startsWith(prefix));
 }
@@ -83,6 +94,33 @@ export function registrableDomain(url: string): string | null {
 }
 
 /**
+ * Returns the grouping host: lowercase, trailing-dot stripped, leading `www.`
+ * stripped the same way as `canonicalUrl`. Null when the URL is not http(s).
+ *
+ * Guarantees punycode (via `URL`) so `münchen.de` and `xn--mnchen-3ya.de` compare
+ * equal, and that `www.github.com` and `github.com` are the same host.
+ */
+export function hostnameOf(url: string): string | null {
+  const parsed = parseHttpUrl(url);
+  if (!parsed) return null;
+  const host = stripLeadingWww(normaliseHost(parsed.hostname));
+  return host === "" ? null : host;
+}
+
+/**
+ * Normalises a user-typed host or site pattern the same way grouping hosts are
+ * compared. Null when empty, whitespace-only, or not a host.
+ *
+ * Guarantees the same lowercase / punycode / trailing-dot / `www.` rules as
+ * `hostnameOf`, so a pattern of `www.GitHub.com.` matches `github.com`.
+ */
+export function hostnameOfPattern(pattern: string): string | null {
+  const trimmed = pattern.trim();
+  if (trimmed === "") return null;
+  return hostnameOf(`https://${trimmed}`);
+}
+
+/**
  * Returns a string that is equal for two URLs exactly when we consider them the
  * same page, or null for anything not http(s).
  *
@@ -95,12 +133,7 @@ export function canonicalUrl(url: string): string | null {
   const parsed = parseHttpUrl(url);
   if (!parsed) return null;
 
-  let host = normaliseHost(parsed.hostname);
-  // The `includes(".")` guard stops a hypothetical host of exactly "www.com"
-  // from collapsing to a bare suffix.
-  if (host.startsWith("www.") && host.slice(4).includes(".")) {
-    host = host.slice(4);
-  }
+  const host = stripLeadingWww(normaliseHost(parsed.hostname));
 
   // `URL` drops :443 on https and :80 on http for us; whatever survives is meaningful.
   const port = parsed.port ? `:${parsed.port}` : "";

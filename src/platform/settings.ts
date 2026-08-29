@@ -1,21 +1,22 @@
 import { browser } from "wxt/browser";
-import { DEFAULT_CONFIG } from "@/core/types";
+import { DEFAULT_CONFIG, type DomainRuleAction } from "@/core/types";
 
 /**
  * Preferences that outlive a session. Collapse, thresholds, and the rest of the
  * options page live in `storage.local` rather than `storage.session` because they
  * are not per-window facts.
  *
- * Settings the plan pipeline does not read yet (topics, archive, rules, AI) are
- * still persisted here so the options page is the source of truth when those
- * stages land. Loading never throws: missing or malformed storage is defaults.
+ * Settings the plan pipeline does not read yet (topics, archive, AI) are still
+ * persisted here so the options page is the source of truth when those stages
+ * land. Rules are persisted here and read by `buildPlan`. Loading never throws:
+ * missing or malformed storage is defaults.
  */
 
 const SETTINGS_KEY = "ui.settings";
 
 export type GroupingMode = "sites" | "topics";
 
-export type DomainRuleAction = "always-name" | "never-group" | "merge-into";
+export type { DomainRuleAction };
 
 export type DomainRule = {
   id: string;

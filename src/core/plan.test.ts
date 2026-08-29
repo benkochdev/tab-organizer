@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildPlan } from "./plan";
-import { type Config, DEFAULT_CONFIG, type TabInfo } from "./types";
+import {
+  type Config,
+  DEFAULT_CONFIG,
+  type DomainRule,
+  type ExistingGroup,
+  type TabInfo,
+} from "./types";
 
 const WINDOW = 1;
 
@@ -19,6 +25,19 @@ function tab(id: number, url: string, overrides: Partial<TabInfo> = {}): TabInfo
 
 function config(overrides: Partial<Config> = {}): Config {
   return { ...DEFAULT_CONFIG, ...overrides };
+}
+
+function rule(pattern: string, action: DomainRule["action"], value = ""): DomainRule {
+  return { pattern, action, value };
+}
+
+function existing(
+  id: number,
+  urls: string[],
+  title = "GitHub",
+  color: ExistingGroup["color"] = "blue",
+): ExistingGroup {
+  return { id, title, color, urls };
 }
 
 /** n tabs on one domain, ids starting at `from`. */
@@ -401,5 +420,275 @@ describe("buildPlan — stats and scale", () => {
 
     expect(plan.stats.tabCount).toBe(500);
     expect(elapsed).toBeLessThan(16);
+  });
+});
+
+describe("buildPlan — domain rules", () => {
+  it("never-groups matching tabs instead of clustering them", () => {
+    const tabs = [...tabsOn("github.com", 3, 1), ...tabsOn("amazon.de", 3, 10)];
+    const plan = buildPlan(WINDOW, tabs, config({ rules: [rule("amazon.de", "never-group")] }));
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.key).toBe("domain:github.com");
+    expect(plan.ungrouped).toEqual([10, 11, 12]);
+  });
+
+  it("names a site even when the pile is below minGroupSize", () => {
+    const plan = buildPlan(
+      WINDOW,
+      tabsOn("github.com", 1),
+      config({ minGroupSize: 3, rules: [rule("github.com", "always-name", "Work")] }),
+    );
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.key).toBe("rule:Work");
+    expect(plan.groups[0]?.label).toBe("Work");
+    expect(plan.groups[0]?.tabIds).toEqual([1]);
+    expect(plan.groups[0]?.reason).toBe("1 tab named Work by rule github.com");
+  });
+
+  it("merges two sites that share a trimmed value into one group", () => {
+    const tabs = [...tabsOn("amazon.de", 3, 1), ...tabsOn("amazon.com", 3, 10)];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({
+        rules: [
+          rule("amazon.de", "merge-into", "Amazon"),
+          rule("amazon.com", "merge-into", " Amazon "),
+        ],
+      }),
+    );
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.key).toBe("rule:Amazon");
+    expect(plan.groups[0]?.label).toBe("Amazon");
+    expect(plan.groups[0]?.tabIds).toEqual([1, 2, 3, 10, 11, 12]);
+    expect(plan.groups[0]?.reason).toBe("6 tabs merged by rule amazon.com, amazon.de");
+  });
+
+  it("treats merging two hosts on one site as a no-op vs default site grouping", () => {
+    const tabs = [
+      tab(1, "https://mail.foo.com/a"),
+      tab(2, "https://mail.foo.com/b"),
+      tab(3, "https://mail.foo.com/c"),
+      tab(4, "https://app.foo.com/a"),
+      tab(5, "https://app.foo.com/b"),
+      tab(6, "https://app.foo.com/c"),
+    ];
+    const merged = buildPlan(
+      WINDOW,
+      tabs,
+      config({
+        rules: [
+          rule("mail.foo.com", "merge-into", "Foo"),
+          rule("app.foo.com", "merge-into", "Foo"),
+        ],
+      }),
+    );
+    const defaults = buildPlan(WINDOW, tabs, config());
+
+    expect(merged.groups).toEqual(defaults.groups);
+    expect(merged.groups[0]?.key).toBe("domain:foo.com");
+  });
+
+  it("lets a host rule beat a site rule on the same tabs", () => {
+    const tabs = [...tabsOn("github.com", 3, 1), ...tabsOn("gist.github.com", 3, 10)];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({
+        rules: [rule("github.com", "always-name", "Work"), rule("gist.github.com", "never-group")],
+      }),
+    );
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.key).toBe("rule:Work");
+    expect(plan.groups[0]?.tabIds).toEqual([1, 2, 3]);
+    expect(plan.ungrouped).toEqual([10, 11, 12]);
+  });
+
+  it("skips an empty pattern and an empty name, so domain clustering still runs", () => {
+    const plan = buildPlan(
+      WINDOW,
+      tabsOn("github.com", 3),
+      config({
+        rules: [rule("", "always-name", "Work"), rule("github.com", "always-name", "  ")],
+      }),
+    );
+
+    expect(plan.groups[0]?.key).toBe("domain:github.com");
+    expect(plan.groups[0]?.label).toBe("GitHub");
+  });
+
+  it("fills maxGroups with rule groups first, leftover slots go to domains", () => {
+    const tabs = [
+      ...tabsOn("a.com", 5, 1),
+      ...tabsOn("b.com", 4, 10),
+      ...tabsOn("news.com", 10, 20),
+    ];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({
+        maxGroups: 2,
+        rules: [rule("a.com", "always-name", "A"), rule("b.com", "always-name", "B")],
+      }),
+    );
+
+    expect(plan.groups.map((group) => group.key)).toEqual(["rule:A", "rule:B"]);
+    expect(plan.ungrouped).toEqual([20, 21, 22, 23, 24, 25, 26, 27, 28, 29]);
+  });
+
+  it("still detects duplicates before rules see the tabs", () => {
+    const tabs = [
+      tab(1, "https://github.com/a"),
+      tab(2, "https://github.com/a"),
+      tab(3, "https://github.com/b"),
+      tab(4, "https://github.com/c"),
+    ];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({ minGroupSize: 3, rules: [rule("github.com", "always-name", "Work")] }),
+    );
+
+    expect(plan.duplicates[0]?.close).toEqual([2]);
+    expect(plan.groups[0]?.key).toBe("rule:Work");
+    expect(plan.groups[0]?.tabIds).toEqual([1, 3, 4]);
+    expect(plan.groups[0]?.tabIds).not.toContain(2);
+  });
+
+  it("peels one host into a merge group and leaves the rest of the site", () => {
+    const tabs = [
+      tab(1, "https://mail.foo.com/a"),
+      tab(2, "https://mail.foo.com/b"),
+      tab(3, "https://mail.foo.com/c"),
+      tab(4, "https://app.foo.com/a"),
+      tab(5, "https://app.foo.com/b"),
+      tab(6, "https://app.foo.com/c"),
+    ];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({ rules: [rule("mail.foo.com", "merge-into", "Mail")] }),
+    );
+
+    const mail = plan.groups.find((group) => group.key === "rule:Mail");
+    const rest = plan.groups.find((group) => group.key === "domain:foo.com");
+    expect(mail?.tabIds).toEqual([1, 2, 3]);
+    expect(rest?.tabIds).toEqual([4, 5, 6]);
+  });
+
+  it("gives leftover maxGroups slots to domain clustering", () => {
+    const tabs = [...tabsOn("github.com", 3, 1), ...tabsOn("news.com", 5, 10)];
+    const plan = buildPlan(
+      WINDOW,
+      tabs,
+      config({ maxGroups: 2, rules: [rule("github.com", "always-name", "Work")] }),
+    );
+
+    expect(plan.groups.map((group) => group.key)).toEqual(["domain:news.com", "rule:Work"]);
+  });
+});
+
+describe("buildPlan — join existing groups", () => {
+  it("adds one leftover tab to an existing site group", () => {
+    const plan = buildPlan(WINDOW, [tab(1, "https://github.com/new")], config(), [
+      existing(5, ["https://github.com/old"]),
+    ]);
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.key).toBe("existing:5");
+    expect(plan.groups[0]?.existingGroupId).toBe(5);
+    expect(plan.groups[0]?.tabIds).toEqual([1]);
+    expect(plan.ungrouped).toEqual([]);
+  });
+
+  it("adds several leftover tabs to the existing group instead of creating a duplicate", () => {
+    const plan = buildPlan(WINDOW, tabsOn("github.com", 3), config({ minGroupSize: 3 }), [
+      existing(5, ["https://github.com/already"]),
+    ]);
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.key).toBe("existing:5");
+    expect(plan.groups.map((group) => group.key)).not.toContain("domain:github.com");
+    expect(plan.groups[0]?.tabIds).toEqual([1, 2, 3]);
+  });
+
+  it("does not join never-group tabs to an existing group of that site", () => {
+    const plan = buildPlan(
+      WINDOW,
+      tabsOn("amazon.de", 3),
+      config({ rules: [rule("amazon.de", "never-group")] }),
+      [existing(5, ["https://amazon.de/old"], "Amazon")],
+    );
+
+    expect(plan.groups).toEqual([]);
+    expect(plan.ungrouped).toEqual([1, 2, 3]);
+  });
+
+  it("picks the larger existing group when two share the same site", () => {
+    const plan = buildPlan(WINDOW, [tab(1, "https://github.com/new")], config(), [
+      existing(8, ["https://github.com/a"], "GitHub"),
+      existing(
+        3,
+        ["https://github.com/a", "https://github.com/b", "https://github.com/c"],
+        "GitHub",
+      ),
+    ]);
+
+    expect(plan.groups[0]?.existingGroupId).toBe(3);
+  });
+
+  it("does not put a Docs tab into an existing Gmail group", () => {
+    const plan = buildPlan(WINDOW, [tab(1, "https://docs.google.com/doc")], config(), [
+      existing(2, ["https://mail.google.com/a", "https://mail.google.com/b"], "Gmail"),
+    ]);
+
+    expect(plan.groups).toEqual([]);
+    expect(plan.ungrouped).toEqual([1]);
+  });
+
+  it("joins amazon.de to an existing Amazon group via merge-into title", () => {
+    const plan = buildPlan(
+      WINDOW,
+      [tab(1, "https://amazon.de/x")],
+      config({ rules: [rule("amazon.de", "merge-into", "Amazon")] }),
+      [existing(9, ["https://amazon.com/old"], "Amazon")],
+    );
+
+    expect(plan.groups).toHaveLength(1);
+    expect(plan.groups[0]?.existingGroupId).toBe(9);
+    expect(plan.groups[0]?.key).toBe("existing:9");
+  });
+
+  it("does not count join proposals against maxGroups", () => {
+    const tabs = [tab(1, "https://github.com/new"), ...tabsOn("news.com", 5, 10)];
+    const plan = buildPlan(WINDOW, tabs, config({ maxGroups: 1, minGroupSize: 3 }), [
+      existing(5, ["https://github.com/old"]),
+    ]);
+
+    expect(plan.groups.map((group) => group.key).sort()).toEqual(["domain:news.com", "existing:5"]);
+  });
+
+  it("still detects duplicates before joining the survivors", () => {
+    const tabs = [
+      tab(1, "https://github.com/a"),
+      tab(2, "https://github.com/a"),
+      tab(3, "https://github.com/b"),
+    ];
+    const plan = buildPlan(WINDOW, tabs, config(), [existing(5, ["https://github.com/old"])]);
+
+    expect(plan.duplicates[0]?.close).toEqual([2]);
+    expect(plan.groups[0]?.tabIds).toEqual([1, 3]);
+    expect(plan.groups[0]?.tabIds).not.toContain(2);
+  });
+
+  it("leaves a single tab ungrouped when no existing group matches", () => {
+    const plan = buildPlan(WINDOW, [tab(1, "https://github.com/new")], config({ minGroupSize: 3 }));
+
+    expect(plan.groups).toEqual([]);
+    expect(plan.ungrouped).toEqual([1]);
   });
 });

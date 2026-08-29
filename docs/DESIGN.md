@@ -9,16 +9,18 @@ product brain. `CLAUDE.md` is how we edit the repo.
 **Shipped (daily use, not AMO-listed).** Preview → apply → undo. Site grouping
 by eTLD+1. Known-service labels (`GitHub`). Google splits by product and
 Wikipedia by title token only when two piles each meet `minGroupSize`.
+Custom domain rules (D-033) run after duplicates and before site clustering.
+Loose tabs join existing groups (D-034) even when there is only one of them.
 D-029 popup + options UI: groups first, compact duplicates line, one primary
 button, “Make tab groups” (off = reorder only), gear → options tab. Collapse,
 thresholds, and duplicate detection live on the options page and feed
 `buildPlan` / apply. Undo per window in `storage.session`. Popup: HTML
 loading screen, React starts after `loadPopup()`. Do not pin popup height.
 
-**Next.** Topic clustering, Archive as a group row, custom domain rules, and
-AI (preview stays local; button label already follows the options toggle).
-Settings for those are saved; they do not change the plan yet. Do not change
-`src/core/` until a stage actually needs a new `Config` field.
+**Next.** Topic clustering, Archive as a group row, and AI (preview stays
+local; button label already follows the options toggle). Settings for those
+are saved; they do not change the plan yet. Do not change `src/core/` until a
+stage actually needs a new `Config` field.
 
 **Not doing (still true).** Per-tab exclude, duplicate survivor picker, i18n,
 host permission, billing, Chrome, CI, a background script that decides
@@ -51,9 +53,9 @@ This is not architecture astronautics. It buys three concrete things:
             |
             v
     [platform] toTabInfo()           drop pinned, privileged, already-grouped
-            |
+            |                        existing groups kept as fingerprints
             v
-    [core] buildPlan(tabs, config, now)   PURE — the entire product is here
+    [core] buildPlan(tabs, config, existingGroups)   PURE
             |
             v
     [ui] <PlanPreview plan={...} />  user unchecks groups and duplicate clusters
@@ -90,6 +92,14 @@ type GroupProposal = {
   color: GroupColor;
   tabIds: number[];
   reason: string;         // shown in the preview: "12 tabs from github.com"
+  existingGroupId?: number; // set when adding to a group that already exists
+};
+
+type ExistingGroup = {
+  id: number;
+  title: string;
+  color: GroupColor;
+  urls: string[];         // member URLs for matching; those tabs stay grouped
 };
 
 type DuplicateCluster = {
@@ -112,6 +122,7 @@ type Config = {
   maxGroups: number;         // default 12
   detectDuplicates: boolean; // default true
   spareDuplicateCanonicals: string[]; // default [] — clusters to list but not close
+  rules: DomainRule[];       // default [] — host/site overrides, D-033
 };
 
 type Snapshot = {
@@ -122,7 +133,12 @@ type Snapshot = {
 };
 
 // pure, src/core/plan.ts
-declare function buildPlan(tabs: TabInfo[], config: Config, now: number): GroupPlan;
+declare function buildPlan(
+  windowId: number,
+  tabs: TabInfo[],
+  config: Config,
+  existingGroups?: ExistingGroup[],
+): GroupPlan;
 
 // impure, src/platform/apply.ts
 type ApplyResult = { snapshot: Snapshot; failedKeys: string[] };  // see D-015
@@ -146,7 +162,9 @@ threading it in later would touch every call site.
 Everything is deterministic and offline. Same input, same bytes out.
 
 **Before the core sees anything**, the adapter drops: pinned tabs, privileged
-URLs, and tabs that are already in a group.
+URLs, and tabs that are already in a group. Those existing groups are passed in
+as fingerprints (id, title, colour, member URLs) so loose tabs can join them
+without the core regrouping their members (D-005, D-034).
 
 Then, in `buildPlan`:
 
@@ -155,11 +173,27 @@ Then, in `buildPlan`:
    everything downstream, so unchecking a cluster grows the groups. Other
    `close` tabs are removed, so the groups shown contain exactly what will exist
    after apply. Skipped entirely when `detectDuplicates` is false.
-2. **Domain clustering** — bucket by eTLD+1, a bucket becomes a group at
-   `minGroupSize` or more. Known services get real names (`GitHub`). Google
-   splits by product and Wikipedia by title tokens, only when two piles each
-   meet `minGroupSize`.
-3. Whatever is left becomes `ungrouped`.
+2. **Join existing groups** — a loose tab joins an existing group when they share
+   a host, a Google product, or a site, or when an always-name / merge-into rule
+   matches the group's title. One tab is enough. never-group tabs do not join.
+   Host beats product beats site. A Gmail-only group does not take Docs tabs.
+   When two groups match equally, the larger one wins, then the lower id. Join
+   proposals do not consume `maxGroups`. Apply adds the tabs with
+   `tabs.group({ groupId })` and does not retitle, recolor, or collapse the
+   existing group. Undo ungroups only the tabs that were added.
+3. **Domain rules** — after joins, before site clustering, so they win over
+   Sites (and later AI). Empty pattern skipped; empty value skips always-name /
+   merge-into; never-group ignores value. Matching is D-033. never-group tabs go
+   to ungrouped. always-name / merge-into pull matching tabs into `rule:<value>`
+   groups (same trimmed value = one group). Rule groups fill `maxGroups` first
+   (size desc, key asc) and may be smaller than `minGroupSize`. Merge of two
+   hosts on the same site that cover that site is a no-op; merge is for one host
+   or two different sites.
+4. **Domain clustering** — remainder, bucket by eTLD+1, a bucket becomes a group
+   at `minGroupSize` or more, using leftover `maxGroups` slots. Known services
+   get real names (`GitHub`). Google splits by product and Wikipedia by title
+   tokens, only when two piles each meet `minGroupSize`.
+5. Whatever is left becomes `ungrouped`.
 
 Stages share one shape, which is what makes adding stage 4 cheap:
 
@@ -177,15 +211,17 @@ field.
 
 1. ~~**Options page**~~ (gear in popup header) — one scrolling page, headings,
    no tabs. Collapse-new-groups, min group size, max groups, and duplicate
-   detection are wired. Grouping default / AI / archive / rules are saved
-   only.
+   detection are wired. Grouping default / AI / archive are saved only. Rules
+   are applied (D-033).
 2. ~~**“Make tab groups” toggle**~~ on the popup, default on. Off = same site
    buckets, only reorder the strip (no Firefox tab-group chrome). Replaced
    Sort by domain / title.
 3. ~~**Duplicates compact line**~~ — one row under groups; expand for clusters;
    close-now lives inside that block, not next to the primary button.
-4. **Custom domain rules** — options list: always-name / never-group / merge
-   into. Saved, not applied.
+4. ~~**Custom domain rules**~~ — always-name / never-group / merge-into. Matching
+   is D-033. Wired into `buildPlan`. Options is still the editor. Pattern matching is locked in D-033: exact host
+   or exact site, no wildcards. Merge of two hosts on the same site is a
+   no-op (sites already share a group). Merge is for one host, or two sites.
 5. **Cross-site topics** — title-similarity over the remainder after domain
    clustering. Radio saved in options; sites still run.
    Wikipedia/Google *in-site* splits already ship (D-027).
@@ -293,6 +329,38 @@ sort remaining params by key, `null` for anything that is not http/https.
   each at `minGroupSize` split by title token.
 - 500 tabs — well under a frame; a rough timing assertion is enough
 
+### Domain rules (D-033)
+
+- Pattern is a hostname, not a URL, glob, or substring. Empty / whitespace skips
+  the rule. Same host normalisation as `canonicalUrl` (lowercase, trailing dot,
+  leading `www.` only when the rest still contains a dot).
+- Pattern equals the tab host → that host only (`mail.foo.com` does not include
+  `app.foo.com`). Else pattern equals the registrable domain → whole site
+  (`github.com` includes `gist.github.com`). Else no match. Host match beats
+  site match when both a host rule and a site rule could apply.
+- `amazon.de` is not `amazon.com`.
+- never-group → ungrouped, not clustered. always-name / merge-into share a
+  `rule:<value>` group for the same trimmed value. Empty value skips those two;
+  never-group ignores value. Rule groups may be smaller than `minGroupSize`.
+- Merge of two hosts on the same site that cover that site is a no-op vs default
+  site grouping. Merge of one host, or of two different sites, is not.
+- Rule groups fill `maxGroups` first; leftover slots go to domain clustering.
+- Duplicates still run first: closed tabs never appear in a rule group.
+
+### Join existing groups (D-034)
+
+- One loose tab is enough. `minGroupSize` does not apply to joins.
+- Match host, then Google product, then site. never-group never joins.
+- Two existing GitHub groups: larger wins, then lower `groupId`.
+- Gmail vs Docs: a Docs tab does not join a Gmail-only group.
+- `amazon.de` joins an existing "Amazon" group when a merge-into / always-name
+  rule uses that title, even though the sites differ.
+- Join proposals do not consume `maxGroups`.
+- Duplicates still run first. Apply does not retitle an existing group. Undo
+  ungroups only the tabs that were added.
+- Wikipedia topic groups all share `wikipedia.org`; a new article joins the
+  larger one. Splitting by title token is not re-run against existing groups.
+
 ### Duplicates
 
 - three tabs on the same canonical URL -> keep one, close two
@@ -338,7 +406,7 @@ Group/Close/Sort row, grouping-mode segmented control, thresholds.
 
 **Options:** one page, headings in this order — Grouping (sites default /
 topics), AI (off, offline-disabled), New groups (collapse), Thresholds,
-Duplicates, Archive, Rules.
+Duplicates, Archive, Rules (host or site, not “domain or pattern”).
 
 **States to keep:** loading (HTML spinner), working, empty, applied + undo,
 error / Firefox too old.
@@ -347,6 +415,28 @@ error / Firefox too old.
 
 Newest first. One line each; a paragraph only when the reasoning is not obvious.
 
+- **D-033 (2026-08-29)** — A rule pattern is a hostname, not a URL, glob, or
+  substring. Empty pattern: skip the rule. Normalise like `url.ts` (lower
+  case, trailing dot, leading `www.`). If the pattern equals the tab’s host,
+  only that host matches (`mail.foo.com` does not include `app.foo.com`). If
+  it equals the registrable domain, the whole site matches (`github.com`
+  includes `gist.github.com`). Host beats site when both could apply. No
+  `*`, no “contains”. `amazon.de` is not `amazon.com`. Amends the D-029
+  rules row (still saved only until a stage reads them).
+- **D-034 (2026-08-29)** — Loose tabs join existing groups instead of forming a
+  second group of the same site. One tab is enough. Already-grouped tabs still
+  never reach core as TabInfo (D-005); the adapter passes group fingerprints.
+  Apply uses `tabs.group({ groupId })` and does not change that group's title,
+  colour, or collapsed state. Undo ungroups only the added tabs. Amends D-005
+  (still no regrouping of members) and D-022 (existing groups are extended, not
+  restyled).
+- **D-033 (2026-08-29)** — Domain-rule patterns are a hostname, not a URL, glob,
+  or substring. Empty pattern skips the rule. Normalise like `url.ts`. Host match
+  (pattern equals tab host) beats site match (pattern equals eTLD+1). amazon.de
+  is not amazon.com. Merge of two hosts on the same site is a no-op; merge is for
+  one host or two different sites. Rules run after duplicates, before domain
+  clustering; they win over Sites (and later AI). Rule groups fill maxGroups
+  first and may be smaller than minGroupSize.
 - **D-032 (2026-08-29)** — Popup light/dark uses the mock’s panel tokens
   (`#ffffff` / `#2b2a33`) and sets `color-scheme` on `:root`, not `Canvas`.
   In the action popup `Canvas` often stays light, so the panel never flips.
@@ -470,8 +560,8 @@ Newest first. One line each; a paragraph only when the reasoning is not obvious.
   never closing anything — throws away half the value.
 - **D-005 (2026-07-24)** — Tabs already in a group are filtered out in the
   adapter and never reach the core. If you grouped it, that was deliberate;
-  don't second-guess it. Falls out of this for free: applying twice is a no-op,
-  and `TabInfo` needs no `groupId`.
+  don't second-guess it. Amended by D-034: those groups are still not regrouped,
+  but loose tabs can join them. `TabInfo` still has no `groupId`.
 - **D-004 (2026-07-24)** — Strip `utm_*`, `fbclid`, `gclid`, `mc_eid`,
   `ref_src`, `igshid` — but **not** bare `ref`. It is load-bearing on GitHub,
   npm and most doc sites; stripping it merges genuinely different pages.

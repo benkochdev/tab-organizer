@@ -125,6 +125,8 @@ async function closeTabs(
  * not what was asked for. A proposal the browser refuses is reported in
  * `failedKeys` and does not abort the rest. Spared duplicate clusters are not
  * closed. Newly created groups are collapsed when `options.collapse` is true.
+ * Tabs added to an existing group do not change that group's title, colour, or
+ * collapsed state (D-022, D-034).
  */
 export async function applyPlan(
   plan: GroupPlan,
@@ -154,18 +156,25 @@ export async function applyPlan(
     // they make in the tab strip, and a dozen round trips is not a bottleneck.
     let groupId: number;
     try {
-      groupId = await browser.tabs.group({
-        createProperties: { windowId: plan.windowId },
-        tabIds,
-      });
+      if (group.existingGroupId !== undefined) {
+        groupId = await browser.tabs.group({ groupId: group.existingGroupId, tabIds });
+      } else {
+        groupId = await browser.tabs.group({
+          createProperties: { windowId: plan.windowId },
+          tabIds,
+        });
+      }
     } catch {
       failedKeys.push(group.key);
       continue;
     }
 
     // Recorded before the title is set: the tabs are grouped either way, and undo
-    // has to know about a group that came out nameless.
+    // has to know about a group that came out nameless. For joins, undo ungroups
+    // only these tabs — the existing group's other members stay put (D-034).
     createdGroups.push({ groupId, tabIds });
+
+    if (group.existingGroupId !== undefined) continue;
 
     try {
       await browser.tabGroups.update(groupId, {

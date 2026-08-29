@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalUrl, registrableDomain } from "./url";
+import { canonicalUrl, hostnameOf, hostnameOfPattern, registrableDomain } from "./url";
 
 describe("registrableDomain", () => {
   it("strips subdomains down to the registrable domain", () => {
@@ -127,5 +127,39 @@ describe("canonicalUrl", () => {
     const started = performance.now();
     expect(canonicalUrl(long)).not.toBeNull();
     expect(performance.now() - started).toBeLessThan(100);
+  });
+});
+
+describe("hostnameOf", () => {
+  it("strips www and a trailing dot the same way as canonicalUrl", () => {
+    expect(hostnameOf("https://www.github.com/foo")).toBe("github.com");
+    expect(hostnameOf("https://github.com./foo")).toBe("github.com");
+  });
+
+  it("leaves www.com whole and does not strip www2", () => {
+    expect(hostnameOf("https://www.com/")).toBe("www.com");
+    expect(hostnameOf("https://www2.example.com/a")).toBe("www2.example.com");
+  });
+
+  it("compares unicode and punycode hosts as the same host", () => {
+    expect(hostnameOf("https://münchen.de/page")).toBe(
+      hostnameOf("https://xn--mnchen-3ya.de/page"),
+    );
+  });
+
+  it("returns null for anything that is not http or https", () => {
+    expect(hostnameOf("about:blank")).toBeNull();
+  });
+});
+
+describe("hostnameOfPattern", () => {
+  it("skips empty and whitespace-only patterns", () => {
+    expect(hostnameOfPattern("")).toBeNull();
+    expect(hostnameOfPattern("   ")).toBeNull();
+  });
+
+  it("normalises like hostnameOf so www.GitHub.com. matches github.com", () => {
+    expect(hostnameOfPattern("www.GitHub.com.")).toBe("github.com");
+    expect(hostnameOfPattern("github.com")).toBe(hostnameOf("https://www.github.com/foo"));
   });
 });

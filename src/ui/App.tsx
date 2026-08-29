@@ -3,6 +3,7 @@ import { buildPlan } from "@/core/plan";
 import type {
   Config,
   DuplicateCluster,
+  ExistingGroup,
   GroupColor,
   GroupPlan,
   GroupProposal,
@@ -42,7 +43,7 @@ const SWATCH: Record<GroupColor, string> = {
 
 type Phase =
   | { status: "unsupported" }
-  | { status: "ready"; windowId: number; tabs: TabInfo[] }
+  | { status: "ready"; windowId: number; tabs: TabInfo[]; existingGroups: ExistingGroup[] }
   | { status: "working"; label: string }
   | {
       status: "applied";
@@ -60,6 +61,7 @@ export type Start =
       kind: "ok";
       windowId: number;
       tabs: TabInfo[];
+      existingGroups: ExistingGroup[];
       snapshot: Snapshot | null;
       settings: UiSettings;
     };
@@ -67,6 +69,7 @@ export type Start =
 type Loaded = {
   windowId: number;
   tabs: TabInfo[];
+  existingGroups: ExistingGroup[];
   snapshot: Snapshot | null;
   settings: UiSettings;
 };
@@ -160,7 +163,7 @@ export async function loadPopup(): Promise<Start> {
  * after every apply and has to be able to run this at any time.
  */
 async function readState(): Promise<Loaded> {
-  const [{ windowId, tabs }, snapshots, settings] = await Promise.all([
+  const [{ windowId, tabs, existingGroups }, snapshots, settings] = await Promise.all([
     readCurrentWindow(),
     loadSnapshotMap(),
     loadUiSettings(),
@@ -169,6 +172,7 @@ async function readState(): Promise<Loaded> {
   return {
     windowId,
     tabs,
+    existingGroups,
     snapshot: snapshots.get(windowId) ?? null,
     settings,
   };
@@ -336,7 +340,12 @@ function DuplicateClusterRow({
 
 function initialPhase(start: Start): Phase {
   if (start.kind === "ok") {
-    return { status: "ready", windowId: start.windowId, tabs: start.tabs };
+    return {
+      status: "ready",
+      windowId: start.windowId,
+      tabs: start.tabs,
+      existingGroups: start.existingGroups,
+    };
   }
   if (start.kind === "unsupported") return { status: "unsupported" };
   return { status: "failed", message: start.message };
@@ -448,7 +457,12 @@ export function App({ start }: { start: Start }) {
 
       const loaded = await readState();
       setSettings(loaded.settings);
-      setPhase({ status: "ready", windowId: loaded.windowId, tabs: loaded.tabs });
+      setPhase({
+        status: "ready",
+        windowId: loaded.windowId,
+        tabs: loaded.tabs,
+        existingGroups: loaded.existingGroups,
+      });
     } catch (error: unknown) {
       setPhase({ status: "failed", message: describe(error) });
     }
@@ -532,8 +546,13 @@ export function App({ start }: { start: Start }) {
     maxGroups: settings.maxGroups,
     detectDuplicates: settings.detectDuplicates,
     spareDuplicateCanonicals: [...spared],
+    rules: settings.rules.map((rule) => ({
+      pattern: rule.pattern,
+      action: rule.action,
+      value: rule.value,
+    })),
   };
-  const plan = buildPlan(phase.windowId, phase.tabs, config);
+  const plan = buildPlan(phase.windowId, phase.tabs, config, phase.existingGroups);
 
   const byId = new Map(phase.tabs.map((tab) => [tab.id, tab]));
   const selected = plan.groups.filter((group) => !excluded.has(group.key));
